@@ -168,6 +168,14 @@ def compare_warning(submitted: str | None, extracted: ExtractedLabel) -> FieldRe
 
     normalized_target = re.sub(r"\s+", " ", target_text).strip()
     normalized_label = re.sub(r"\s+", " ", label_text).strip()
+    # A space OCR mistakenly inserts before the colon ("WARNING :") is a
+    # character-segmentation artifact, not a real formatting choice by
+    # whoever printed the label — collapsing it here keeps the header check
+    # sensitive to what Jenny actually cares about (case, wording) without
+    # hard-failing a label over OCR noise. Caught via a degraded synthetic
+    # test image (dark + sensor noise) that would otherwise have gone from
+    # "unreadable" to "incorrectly and confidently rejected."
+    normalized_label = re.sub(r"\s+:", ":", normalized_label, count=1)
 
     notes = []
     status = FieldStatus.MATCH

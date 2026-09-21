@@ -32,6 +32,21 @@ checks whether the government warning (always the label's last content
 block) was found sitting above most other text; if so, it rotates the
 whole image 180° and re-extracts. See `sample_labels/upside_down_label.png`
 for a worked example.
+
+Real-world submitted photos can also be dark, glare-y, or generally poor
+quality (per Jenny's discovery-note complaint about agents having to
+reject and ask for a re-shoot). Testing against synthetic dark/noisy/
+glare-y labels found brand/class/ABV/net-contents survive that kind of
+degradation almost every time on their own — RapidOCR's models are more
+tolerant than expected — but the government warning (the longest, most
+spatially spread-out text block) is the one field that can go completely
+undetected. There's no single contrast fix that helps every case
+(autocontrast recovered a noisy-dark sample but did nothing for a glare
+sample; histogram equalization was the reverse, and made a different
+noisy sample much worse by amplifying the noise) so rather than applying
+one unconditionally and risking making a fine image worse, `extract()`
+only reaches for these as a fallback, and only when the warning wasn't
+found on the first pass — see `_recover_missing_warning()`.
 """
 from __future__ import annotations
 
@@ -40,7 +55,7 @@ import re
 import statistics
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .base import ExtractedLabel, LabelExtractor
 
@@ -62,6 +77,16 @@ NET_CONTENTS_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*(mL|ml|ML|L|l|liters?|fl\.?\s*oz\.?)", re.IGNORECASE
 )
 WARNING_START_RE = re.compile(r"GOVERNMENT\s+WARNING\s*:?", re.IGNORECASE)
+
+# Tried in this order as a fallback when the warning isn't found on the
+# first pass. Neither is a strict improvement over the other — each fixed
+# a different failure mode in testing and made a different case worse — so
+# these are only ever tried one at a time, stopping at the first success,
+# never applied unconditionally. See module docstring.
+_ENHANCEMENTS = {
+    "autocontrast": lambda image: ImageOps.autocontrast(image, cutoff=1),
+    "equalize": lambda image: ImageOps.equalize(image),
+}
 
 _engine = None  # module-level singleton; loading the ONNX models is slow (~seconds)
 
@@ -159,12 +184,54 @@ class OcrExtractor(LabelExtractor):
                     "Image appeared to be upside-down (the government warning was found above "
                     "most other label text); automatically rotated 180° and re-analyzed.",
                 )
-                return rotated_result
-            result.notes.append(
-                "This label's layout looks unusual (the government warning was found above "
-                "most other label text) — please confirm the image orientation manually."
-            )
+                image, result = rotated, rotated_result
+            else:
+                result.notes.append(
+                    "This label's layout looks unusual (the government warning was found above "
+                    "most other label text) — please confirm the image orientation manually."
+                )
+
+        if result.government_warning is None:
+            result = self._recover_missing_warning(image, result)
+
         return result
+
+    def _recover_missing_warning(self, image: Image.Image, original: ExtractedLabel) -> ExtractedLabel:
+        """Testing against dark/noisy/glare-y synthetic labels found brand,
+        class, ABV, and net contents almost always survive on the first
+        pass, but the warning — the longest, most spread-out text block —
+        can go completely undetected. Since no single contrast fix helped
+        every case (see module docstring), each candidate is tried in turn
+        against the *original* image, and the first one that actually finds
+        the warning wins; this costs an extra OCR pass per candidate, but
+        only for images that already failed to find the warning, not the
+        common case.
+
+        Only the warning-related fields are taken from the enhanced pass —
+        everything else (brand, class, confidence, ...) stays from the
+        original extraction. An enhancement that recovers the warning can
+        still quietly hurt some other field (equalize did exactly this to
+        brand-name accuracy on one glare-test image while fixing the
+        warning), so there's no reason to risk fields that already read
+        correctly just because one field didn't.
+        """
+        for name, transform in _ENHANCEMENTS.items():
+            enhanced_result, _, _ = self._extract_from_image(transform(image))
+            if enhanced_result.government_warning is not None:
+                original.government_warning = enhanced_result.government_warning
+                original.warning_header_allcaps = enhanced_result.warning_header_allcaps
+                original.warning_header_bold = enhanced_result.warning_header_bold
+                original.notes.append(
+                    "Bold formatting of the warning header cannot be verified by OCR; confirm visually."
+                )
+                original.notes.insert(
+                    0,
+                    f"Government warning wasn't found on the original image; recovered after "
+                    f"enhancing image contrast ({name}). Original image quality may be marginal — "
+                    "consider requesting a clearer photo.",
+                )
+                return original
+        return original
 
     def _extract_from_image(self, image: Image.Image) -> tuple[ExtractedLabel, float | None, float | None]:
         engine = _get_engine()

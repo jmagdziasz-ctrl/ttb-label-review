@@ -73,6 +73,33 @@ def test_warning_title_case_header_is_mismatch():
     assert r.status == FieldStatus.MISMATCH
 
 
+def test_warning_stray_space_before_colon_is_not_a_header_violation():
+    # Caught via a degraded (dark + noisy) synthetic test image: OCR
+    # occasionally inserts a space before the colon ("WARNING :") purely as
+    # a character-segmentation artifact. That's not the same thing as
+    # Jenny's real title-case complaint and shouldn't hard-fail a label
+    # over OCR noise.
+    label = ExtractedLabel(
+        government_warning=CANONICAL_WARNING.replace("GOVERNMENT WARNING:", "GOVERNMENT WARNING :"),
+        warning_header_bold=True,
+        method="ocr",
+    )
+    r = compare_warning(None, label)
+    assert r.status == FieldStatus.MATCH
+
+
+def test_warning_title_case_with_stray_space_is_still_mismatch():
+    # The colon-spacing fix must not accidentally launder a real case
+    # violation just because OCR also added a stray space.
+    label = ExtractedLabel(
+        government_warning=CANONICAL_WARNING.replace("GOVERNMENT WARNING:", "Government Warning :"),
+        warning_header_bold=True,
+        method="ocr",
+    )
+    r = compare_warning(None, label)
+    assert r.status == FieldStatus.MISMATCH
+
+
 def test_warning_body_mismatch_via_ocr_is_needs_review_not_fail():
     # OCR's text detector can drop a whole line; treat a body-text deviation
     # under OCR as a signal for human review rather than an automatic fail,

@@ -7,7 +7,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import numpy as np
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageFilter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 from app.warning_text import CANONICAL_WARNING, WARNING_BODY, WARNING_HEADER  # noqa: E402
@@ -58,6 +59,7 @@ def make_label(
     blur: bool = False,
     rotate: float = 0,
     jpeg_noise: bool = False,
+    save: bool = True,
 ):
     img = Image.new("RGB", (W, H), color=(245, 240, 225))
     draw = ImageDraw.Draw(img)
@@ -102,9 +104,30 @@ def make_label(
     if blur:
         img = img.filter(ImageFilter.GaussianBlur(radius=4))
 
-    out_path = OUT_DIR / filename
-    img.save(out_path, quality=60 if jpeg_noise else 95)
-    print(f"wrote {out_path}")
+    if save:
+        out_path = OUT_DIR / filename
+        img.save(out_path, quality=60 if jpeg_noise else 95)
+        print(f"wrote {out_path}")
+    return img
+
+
+def apply_glare(img: Image.Image, box: tuple[int, int, int, int], intensity: int = 180) -> Image.Image:
+    """Simulates a bright reflection washing out part of the label, e.g.
+    glare off curved glass under a harsh light — per Jenny's discovery-note
+    complaint about agents rejecting photos with glare."""
+    overlay = Image.new("RGB", img.size, (255, 255, 255))
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).ellipse(list(box), fill=intensity)
+    return Image.composite(overlay, img, mask)
+
+
+def apply_dark_noisy(img: Image.Image, brightness: float = 0.35, noise_std: float = 25) -> Image.Image:
+    """Simulates a cheap phone camera photo taken in poor lighting: dark,
+    with visible sensor noise and a touch of blur."""
+    darker = ImageEnhance.Brightness(img).enhance(brightness)
+    arr = np.array(darker).astype(float)
+    noisy = np.clip(arr + np.random.default_rng(0).normal(0, noise_std, arr.shape), 0, 255)
+    return Image.fromarray(noisy.astype("uint8")).filter(ImageFilter.GaussianBlur(1.5))
 
 
 def main():
@@ -173,6 +196,42 @@ def main():
         abv_line="45% Alc./Vol. (90 Proof)",
         rotate=180,
     )
+
+    # 8-10. Jenny's "weird angles, bad lighting, glare" complaint about
+    #    agents having to reject and ask for a re-shoot. Testing found
+    #    brand/class/ABV/net-contents survive these almost every time on
+    #    their own; the government warning is the field that can go
+    #    missing, which is why extraction has a contrast-enhancement
+    #    fallback specifically for it (see ocr_extractor.py).
+    make_label(
+        "steep_angle_label.png",
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        abv_line="45% Alc./Vol. (90 Proof)",
+        rotate=20,
+    )
+
+    base = make_label(
+        "_base_dark_noisy.png",
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        abv_line="45% Alc./Vol. (90 Proof)",
+        save=False,
+    )
+    dark_noisy_path = OUT_DIR / "dark_noisy_label.png"
+    apply_dark_noisy(base).save(dark_noisy_path)
+    print(f"wrote {dark_noisy_path}")
+
+    base = make_label(
+        "_base_glare.png",
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        abv_line="45% Alc./Vol. (90 Proof)",
+        save=False,
+    )
+    glare_path = OUT_DIR / "glare_label.png"
+    apply_glare(base, box=(200, 350, 700, 650)).save(glare_path)
+    print(f"wrote {glare_path}")
 
 
 if __name__ == "__main__":

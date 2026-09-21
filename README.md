@@ -20,10 +20,13 @@ from those interviews (cited inline).
   cloud upgrade.
 - **Speed matters more than perfection.** Sarah was explicit: the prior pilot
   died because it took 30-40s/label and agents could eyeball five labels in
-  that time. Single-label review runs in roughly 1.8-3.5 seconds on a modest
-  4-core dev machine, comfortably under her ~5s bar. Getting there took a
-  specific fix, not just "OCR is inherently fast enough" — see
-  [Performance tuning](#performance-tuning-hitting-the-5-second-target).
+  that time. Single-label review runs in roughly 1.8-3.5 seconds for a
+  normal-quality image on a modest 4-core dev machine, comfortably under her
+  ~5s bar. Getting there took a specific fix, not just "OCR is inherently
+  fast enough" — see [Performance tuning](#performance-tuning-hitting-the-5-second-target).
+  A badly degraded photo (see [Handling imperfect photos](#handling-imperfect-photos-angle-lighting-glare))
+  can cost more than that, on purpose — the alternative is an automatic
+  reject, which costs the applicant far more real time than a slow response.
 - **Judgment over literal matching.** Dave's complaint was that a tool which
   flags `STONE'S THROW` vs `Stone's Throw` as a mismatch is useless. Every
   text field is compared after normalizing case/punctuation/whitespace, and
@@ -93,7 +96,7 @@ Two interchangeable backends implement the same interface
 | Cost | Free | Per-image API cost |
 | Network | None required | Requires outbound HTTPS to the Anthropic API |
 | Setup | `pip install`, nothing else | Set `ANTHROPIC_API_KEY` env var |
-| Speed | ~1.8-3.5s/label (this machine, after tuning — see below) | Not benchmarked here (no key available in dev); typically a few seconds, network-dependent |
+| Speed | ~1.8-3.5s/label normally (this machine, after tuning — see below); up to ~15s if the image is degraded enough to need the contrast-recovery fallback | Not benchmarked here (no key available in dev); typically a few seconds, network-dependent |
 | Field extraction | Regex + a layout heuristic (see below) | The model directly returns structured fields |
 | Bold/formatting detection | **Cannot detect bold at all** — flagged as "needs review" every time | Can directly assess whether the warning header is bold |
 | Handles blurry/angled photos | Weaker — text detector can miss whole lines | Much stronger (this was Jenny's specific ask) |
@@ -148,10 +151,13 @@ padding. The default batch size of 6 was already a reasonable balance and
 was left alone.
 
 Net effect, measured end-to-end through the actual browser (not a
-synthetic benchmark) across all six sample labels: **1.8-3.5 seconds**,
-down from 4.9-9.6 seconds — comfortably under Sarah's bar in every case
-tested. This was measured on a 4-core dev machine inside a shared/sandboxed
-environment; real deployment hardware would likely do at least as well.
+synthetic benchmark) across the six normal-quality sample labels:
+**1.8-3.5 seconds**, down from 4.9-9.6 seconds — comfortably under Sarah's
+bar in every case tested. This was measured on a 4-core dev machine inside
+a shared/sandboxed environment; real deployment hardware would likely do at
+least as well. (The four deliberately degraded samples added later —
+angle, lighting, glare, upside-down — trade some of that speed back for
+correctness; see [Handling imperfect photos](#handling-imperfect-photos-angle-lighting-glare).)
 
 ## How matching works
 
@@ -240,6 +246,59 @@ re-extracted automatically (double the OCR cost, but only for this rare
 case — see `sample_labels/upside_down_label.png` and
 [`ocr_extractor.py`](backend/app/extraction/ocr_extractor.py)).
 
+## Handling imperfect photos (angle, lighting, glare)
+
+Jenny's discovery-note complaint was specific: agents currently reject any
+label they can't read cleanly and ask for a re-shoot, rather than the tool
+handling *some* of that itself. This was tested directly rather than
+assumed — `sample_labels/steep_angle_label.png` (20° tilt),
+`dark_noisy_label.png` (dark + sensor noise, simulating a cheap phone photo
+in bad light), and `glare_label.png` (a bright reflection over part of the
+label) all exercise this.
+
+**Finding: brand name, class/type, ABV, and net contents survive this kind
+of degradation almost every time on their own** — RapidOCR's models turned
+out more tolerant of angle, darkness, and noise than expected. **The
+government warning is the one field that can go completely undetected**,
+since it's the longest, most spatially spread-out text block, so it's the
+most likely to have some portion cut off or missed under any distortion.
+
+For that specific failure, `extract()` has a fallback: if the warning
+wasn't found on the first pass, it retries with a contrast-enhanced version
+of the image before giving up. Two techniques were tested (autocontrast,
+histogram equalization) and neither one is a strict improvement over the
+other — autocontrast recovered the dark-and-noisy sample but did nothing
+for the glare sample; equalization was the reverse, and made a *different*
+noisy sample much worse by amplifying its noise. So rather than applying
+either unconditionally (real regression risk — a "fix" that sometimes makes
+things worse isn't safe to always run), each is tried in turn only when the
+warning is missing, keeping only the recovered warning text and discarding
+everything else from that attempt — brand/class/etc. stay from the original
+pass, since an enhancement that rescues the warning can still quietly hurt
+some other field it didn't need to touch (equalization measurably did this
+to brand-name accuracy on one test image before that isolation was added).
+
+This trades speed for the rare case, on purpose: a normal-quality image is
+still a single OCR pass at 2-5s, but an image degraded enough to lose the
+warning entirely now costs up to 3 passes — measured 8-15s end-to-end on
+`dark_noisy_label.png` and `glare_label.png`. That's well past the 5s
+target, but the alternative is what Jenny described: an automatic reject
+and a request for a new photo, which costs far more real time than a slow
+response. The outcome in every tested case was `needs_review` (or the
+correct `fail` for a genuine violation), never a false pass and never a
+crash — see the table this produces in [Known limitations](#known-limitations--trade-offs).
+
+One correctness fix fell directly out of this testing: OCR occasionally
+inserts a stray space before the warning header's colon ("WARNING :")
+purely as a character-segmentation artifact. That was being treated as "the
+required header isn't there" — a hard, unconditional fail — which would
+have wrongly rejected a label that's actually fully compliant, just poorly
+photographed. Fixed by normalizing that specific whitespace before the
+header check, without touching case (so Jenny's real "Government Warning"
+title-case violation still fails correctly — see
+`test_warning_title_case_with_stray_space_is_still_mismatch` in
+[`test_matching.py`](backend/tests/test_matching.py)).
+
 ## Known limitations & trade-offs
 
 - **Batch throughput is currently sequential for the OCR path, on purpose.**
@@ -272,11 +331,16 @@ case — see `sample_labels/upside_down_label.png` and
   actually a legally valid class/type designation under TTB's regulations.
   That's a different (much larger) problem than label-vs-application matching.
 - **Sample labels are synthetic**, generated with PIL rather than photographed
-  bottles, since no real label photos were available. They're representative
-  of clean product photography but don't fully exercise real-world glare,
-  angle, or lighting issues the way an actual phone photo would (Jenny's
-  request) — the blurry/rotated sample is an approximation of that, not the
-  real thing.
+  bottles, since no real label photos were available — including the ones
+  built specifically to exercise angle, lighting, and glare (see
+  [Handling imperfect photos](#handling-imperfect-photos-angle-lighting-glare)).
+  They're a reasonable approximation, but a real phone photo of a real
+  printed label has failure modes these don't fully capture: glare off
+  curved glass rather than a flat overlay, actual JPEG compression from a
+  real camera, uneven real-world lighting rather than a synthetic gradient
+  or noise filter. The tested robustness is real, but the true worst case
+  on an actual submitted photo could still be somewhat harder than these
+  results suggest.
 
 ## API reference
 
