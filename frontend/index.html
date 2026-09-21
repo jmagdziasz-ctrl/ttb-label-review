@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TTB Label Compliance Review</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>TTB Label Compliance Review <span class="badge-proto">Prototype</span></h1>
+  <p class="subtitle">Checks a label image against the submitted application — automatically catches simple mismatches so agents can focus on judgment calls.</p>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="single" role="tab" aria-selected="true">Single Label</button>
+  <button class="tab" data-tab="batch" role="tab" aria-selected="false">Batch Upload</button>
+</nav>
+
+<main>
+  <!-- ===================== SINGLE REVIEW ===================== -->
+  <section id="panel-single" class="panel active">
+    <form id="single-form">
+      <div class="grid">
+        <div class="card">
+          <h2>1. Label Image</h2>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="image-input" accept="image/*" required>
+            <span id="dropzone-text">Click to choose a photo, or drag one here</span>
+            <img id="image-preview" alt="Label preview" hidden>
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>2. What the Application States</h2>
+
+          <label>Beverage Type
+            <select name="beverage_type" id="beverage_type">
+              <option value="spirits" selected>Distilled Spirits</option>
+              <option value="wine">Wine</option>
+              <option value="beer">Beer / Malt Beverage</option>
+            </select>
+          </label>
+
+          <label>Brand Name
+            <input type="text" name="brand_name" placeholder="e.g. OLD TOM DISTILLERY" required>
+          </label>
+
+          <label>Class / Type Designation
+            <input type="text" name="class_type" placeholder="e.g. Kentucky Straight Bourbon Whiskey" required>
+          </label>
+
+          <label>Alcohol Content
+            <input type="text" name="alcohol_content" placeholder="e.g. 45% Alc./Vol. (90 Proof)" required>
+          </label>
+
+          <label>Net Contents
+            <input type="text" name="net_contents" placeholder="e.g. 750 mL" required>
+          </label>
+
+          <label>Country of Origin <span class="optional">(imports only)</span>
+            <input type="text" name="country_of_origin" placeholder="e.g. Scotland">
+          </label>
+
+          <label>Government Warning <span class="optional">(leave blank to check against the standard required text)</span>
+            <textarea name="government_warning" rows="3" placeholder="Leave blank unless you need to check custom text"></textarea>
+          </label>
+        </div>
+      </div>
+
+      <button type="submit" class="primary-btn" id="single-submit">Review Label</button>
+    </form>
+
+    <div id="single-result" class="result-area" hidden></div>
+  </section>
+
+  <!-- ===================== BATCH REVIEW ===================== -->
+  <section id="panel-batch" class="panel">
+    <div class="card">
+      <h2>Batch Review</h2>
+      <p>For importers dropping off many applications at once. Upload a manifest spreadsheet plus all the label images — each image is matched to its application row by filename.</p>
+      <ol class="steps">
+        <li><a href="/api/manifest-template" download="manifest_template.csv">Download the manifest CSV template</a>, fill in one row per label.</li>
+        <li>Select all the label images (the <code>filename</code> column must match each image's file name).</li>
+        <li>Click Review Batch.</li>
+      </ol>
+
+      <form id="batch-form">
+        <label>Manifest CSV
+          <input type="file" id="manifest-input" accept=".csv" required>
+        </label>
+        <label>Label Images <span class="optional">(select multiple)</span>
+          <input type="file" id="images-input" accept="image/*" multiple required>
+        </label>
+        <button type="submit" class="primary-btn" id="batch-submit">Review Batch</button>
+      </form>
+    </div>
+
+    <div id="batch-result" class="result-area" hidden></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

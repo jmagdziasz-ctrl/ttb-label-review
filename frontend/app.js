@@ -1,0 +1,227 @@
+const STATUS_ICON = {
+  match: "✓", match_minor: "✓", needs_review: "⚠",
+  mismatch: "✗", missing: "✗",
+};
+const STATUS_LABEL = {
+  match: "Match", match_minor: "Match (minor diff)", needs_review: "Needs Review",
+  mismatch: "Mismatch", missing: "Not Found",
+};
+const OVERALL_LABEL = {
+  pass: "PASS — all fields match",
+  needs_review: "NEEDS REVIEW — human check recommended",
+  fail: "FAIL — discrepancy found",
+};
+const OVERALL_ICON = { pass: "✅", needs_review: "⚠️", fail: "❌" };
+const FIELD_LABELS = {
+  brand_name: "Brand Name", class_type: "Class / Type", alcohol_content: "Alcohol Content",
+  net_contents: "Net Contents", government_warning: "Government Warning", country_of_origin: "Country of Origin",
+};
+
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => (toast.hidden = true), 6000);
+}
+
+// ---- Tabs ----
+document.querySelectorAll(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((b) => { b.classList.remove("active"); b.setAttribute("aria-selected", "false"); });
+    btn.classList.add("active");
+    btn.setAttribute("aria-selected", "true");
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    document.getElementById(`panel-${btn.dataset.tab}`).classList.add("active");
+  });
+});
+
+// ---- Single review: image preview + drag/drop ----
+const dropzone = document.getElementById("dropzone");
+const imageInput = document.getElementById("image-input");
+const dropzoneText = document.getElementById("dropzone-text");
+const imagePreview = document.getElementById("image-preview");
+
+function handleFileSelected(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imagePreview.src = e.target.result;
+    imagePreview.hidden = false;
+    dropzoneText.textContent = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+imageInput.addEventListener("change", () => handleFileSelected(imageInput.files[0]));
+["dragenter", "dragover"].forEach((evt) =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add("drag-over"); })
+);
+["dragleave", "drop"].forEach((evt) =>
+  dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove("drag-over"); })
+);
+dropzone.addEventListener("drop", (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) { imageInput.files = e.dataTransfer.files; handleFileSelected(file); }
+});
+
+// ---- Single review submit ----
+const singleForm = document.getElementById("single-form");
+const singleResult = document.getElementById("single-result");
+const singleSubmit = document.getElementById("single-submit");
+
+singleForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!imageInput.files[0]) { showToast("Please choose a label image first."); return; }
+
+  const formData = new FormData(singleForm);
+  formData.set("image", imageInput.files[0]);
+
+  singleSubmit.disabled = true;
+  singleSubmit.innerHTML = '<span class="spinner"></span>Reviewing…';
+  singleResult.hidden = true;
+
+  const started = performance.now();
+  try {
+    const res = await fetch("/api/review", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Request failed");
+    renderSingleResult(data, performance.now() - started);
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  } finally {
+    singleSubmit.disabled = false;
+    singleSubmit.textContent = "Review Label";
+  }
+});
+
+function fieldRowHtml(f) {
+  const label = FIELD_LABELS[f.field] || f.field;
+  return `
+    <tr>
+      <td>${label}</td>
+      <td class="value-diff">${escapeHtml(f.submitted_value ?? "—")}</td>
+      <td class="value-diff">${escapeHtml(f.extracted_value ?? "—")}</td>
+      <td>
+        <span class="status-pill ${f.status}">${STATUS_ICON[f.status]} ${STATUS_LABEL[f.status]}</span>
+        ${f.note ? `<div class="note">${escapeHtml(f.note)}</div>` : ""}
+      </td>
+    </tr>`;
+}
+
+function renderSingleResult(data, clientMs) {
+  const warningsHtml = data.warnings && data.warnings.length
+    ? `<div class="warnings-box"><strong>Heads up:</strong><ul>${data.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>`
+    : "";
+
+  singleResult.innerHTML = `
+    <div class="overall-banner ${data.overall_status}">
+      <span class="icon">${OVERALL_ICON[data.overall_status]}</span>
+      <div>
+        ${OVERALL_LABEL[data.overall_status]}
+        <span class="meta-line">Extraction: ${data.extraction_method}${data.extraction_confidence != null ? ` · confidence ${(data.extraction_confidence * 100).toFixed(0)}%` : ""} · processed in ${data.processing_time_ms} ms (${clientMs.toFixed(0)} ms round-trip)</span>
+      </div>
+    </div>
+    ${warningsHtml}
+    <table class="field-table">
+      <thead><tr><th>Field</th><th>Application Says</th><th>Label Shows</th><th>Result</th></tr></thead>
+      <tbody>${data.fields.map(fieldRowHtml).join("")}</tbody>
+    </table>
+  `;
+  singleResult.hidden = false;
+  singleResult.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---- Batch review ----
+const batchForm = document.getElementById("batch-form");
+const batchResult = document.getElementById("batch-result");
+const batchSubmit = document.getElementById("batch-submit");
+
+batchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const manifestFile = document.getElementById("manifest-input").files[0];
+  const imageFiles = document.getElementById("images-input").files;
+  if (!manifestFile || !imageFiles.length) { showToast("Please select a manifest CSV and at least one image."); return; }
+
+  const formData = new FormData();
+  formData.append("manifest", manifestFile);
+  Array.from(imageFiles).forEach((f) => formData.append("images", f));
+
+  batchSubmit.disabled = true;
+  batchSubmit.innerHTML = '<span class="spinner"></span>Reviewing batch…';
+  batchResult.hidden = true;
+
+  const started = performance.now();
+  try {
+    const res = await fetch("/api/review/batch", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Request failed");
+    renderBatchResult(data, performance.now() - started);
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  } finally {
+    batchSubmit.disabled = false;
+    batchSubmit.textContent = "Review Batch";
+  }
+});
+
+function renderBatchResult(data, clientMs) {
+  const s = data.summary;
+  const summaryHtml = `
+    <div class="summary-row">
+      <div class="summary-chip total">${s.total} total</div>
+      <div class="summary-chip pass">${s.pass} pass</div>
+      <div class="summary-chip needs_review">${s.needs_review} needs review</div>
+      <div class="summary-chip fail">${s.fail} fail</div>
+      ${s.error ? `<div class="summary-chip error">${s.error} errored</div>` : ""}
+      <div class="summary-chip total">${(clientMs / 1000).toFixed(1)}s total</div>
+    </div>`;
+
+  const unmatchedHtml = data.unmatched_uploaded_images.length
+    ? `<div class="warnings-box"><strong>Uploaded but not in manifest:</strong> ${data.unmatched_uploaded_images.map(escapeHtml).join(", ")}</div>`
+    : "";
+
+  const rowsHtml = data.results.map((r, i) => {
+    if (r.error) {
+      return `<tr class="error-row"><td>${escapeHtml(r.filename)}</td><td colspan="4">${escapeHtml(r.error)}</td></tr>`;
+    }
+    const fieldSummary = r.fields.map((f) => `${FIELD_LABELS[f.field] || f.field}: ${STATUS_ICON[f.status]}`).join("  ");
+    return `
+      <tr class="expandable" data-detail="detail-${i}">
+        <td>${escapeHtml(r.filename)}</td>
+        <td><span class="status-pill ${r.overall_status === "pass" ? "match" : r.overall_status}">${OVERALL_ICON[r.overall_status]} ${r.overall_status.replace("_", " ")}</span></td>
+        <td>${escapeHtml(fieldSummary)}</td>
+        <td>${r.processing_time_ms} ms</td>
+        <td>▾ details</td>
+      </tr>
+      <tr id="detail-${i}" class="detail-row" hidden>
+        <td colspan="5">
+          <table class="field-table">
+            <thead><tr><th>Field</th><th>Application Says</th><th>Label Shows</th><th>Result</th></tr></thead>
+            <tbody>${r.fields.map(fieldRowHtml).join("")}</tbody>
+          </table>
+          ${r.warnings && r.warnings.length ? `<div class="warnings-box"><ul>${r.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>` : ""}
+        </td>
+      </tr>`;
+  }).join("");
+
+  batchResult.innerHTML = `
+    ${summaryHtml}
+    ${unmatchedHtml}
+    <table class="batch-table">
+      <thead><tr><th>Filename</th><th>Overall</th><th>Field Summary</th><th>Time</th><th></th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+  batchResult.hidden = false;
+
+  batchResult.querySelectorAll("tr.expandable").forEach((row) => {
+    row.addEventListener("click", () => {
+      const detail = document.getElementById(row.dataset.detail);
+      detail.hidden = !detail.hidden;
+    });
+  });
+  batchResult.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
