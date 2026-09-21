@@ -20,10 +20,10 @@ from those interviews (cited inline).
   cloud upgrade.
 - **Speed matters more than perfection.** Sarah was explicit: the prior pilot
   died because it took 30-40s/label and agents could eyeball five labels in
-  that time. Single-label review here runs in roughly 4-9 seconds on a modest
-  4-core machine (see [Known limitations](#known-limitations--trade-offs) —
-  this is close to, not comfortably under, the ~5s bar she set, and it's the
-  single biggest thing I'd optimize next).
+  that time. Single-label review runs in roughly 1.8-3.5 seconds on a modest
+  4-core dev machine, comfortably under her ~5s bar. Getting there took a
+  specific fix, not just "OCR is inherently fast enough" — see
+  [Performance tuning](#performance-tuning-hitting-the-5-second-target).
 - **Judgment over literal matching.** Dave's complaint was that a tool which
   flags `STONE'S THROW` vs `Stone's Throw` as a mismatch is useless. Every
   text field is compared after normalizing case/punctuation/whitespace, and
@@ -93,7 +93,7 @@ Two interchangeable backends implement the same interface
 | Cost | Free | Per-image API cost |
 | Network | None required | Requires outbound HTTPS to the Anthropic API |
 | Setup | `pip install`, nothing else | Set `ANTHROPIC_API_KEY` env var |
-| Speed | ~4-9s/label (this machine) | Not benchmarked here (no key available in dev); typically a few seconds, network-dependent |
+| Speed | ~1.8-3.5s/label (this machine, after tuning — see below) | Not benchmarked here (no key available in dev); typically a few seconds, network-dependent |
 | Field extraction | Regex + a layout heuristic (see below) | The model directly returns structured fields |
 | Bold/formatting detection | **Cannot detect bold at all** — flagged as "needs review" every time | Can directly assess whether the warning header is bold |
 | Handles blurry/angled photos | Weaker — text detector can miss whole lines | Much stronger (this was Jenny's specific ask) |
@@ -106,6 +106,48 @@ endpoint, e.g. for side-by-side comparison.
 firewall/change-control comments, a tool that only works with a cloud API key
 would likely never survive contact with TTB's actual network. The free path
 had to be the one that works out of the box.
+
+## Performance tuning: hitting the 5-second target
+
+An earlier version of this tool measured 4-9s/label — close to, but not
+confidently under, Sarah's ~5s bar. Profiling (`text_detector`/`text_cls`/
+`text_recognizer` each report their own elapsed time) showed detection and
+classification were both fast; **recognition** — the step that reads the
+text out of each detected line — was 80-90% of the total, at roughly
+1-4.5s depending on how many lines the label had.
+
+The actual cause wasn't compute, it was **thread oversubscription**: ONNX
+Runtime's default execution plan spins up a multi-threaded worker pool
+(sized to the machine's core count) for every inference call. For a model
+this small — a handful of 48×320px text-line crops — the overhead of
+synchronizing that thread pool measured *higher* than the compute it was
+supposed to parallelize. Forcing single-threaded ONNX execution
+(`intra_op_num_threads=1`, `inter_op_num_threads=1`) cut total time roughly
+in half on its own. RapidOCR doesn't expose a thread-count option, so this
+is applied by patching the `SessionOptions` class it builds its sessions
+from — see `_patch_onnx_single_threaded()` in
+[`ocr_extractor.py`](backend/app/extraction/ocr_extractor.py).
+
+Also disabled: RapidOCR's angle classifier, which runs a whole extra model
+pass per detected line to check whether it's upside-down. That's a
+reasonable thing to check for photos scraped from the wild, but a label
+photo taken deliberately by an agent is essentially never rotated 180° —
+measured savings were small (<0.1s) but real, and free.
+
+One thing that looked promising but wasn't, worth recording so it isn't
+re-tried later: **increasing the recognizer's batch size** (to fit more
+detected lines into a single inference call, hoping to cut the *number* of
+calls) made things slower, not faster — batching pads every crop in a
+batch to the width of the longest one, so grouping a short line (like the
+warning header) with a long wrapped paragraph line wastes compute on
+padding. The default batch size of 6 was already a reasonable balance and
+was left alone.
+
+Net effect, measured end-to-end through the actual browser (not a
+synthetic benchmark) across all six sample labels: **1.8-3.5 seconds**,
+down from 4.9-9.6 seconds — comfortably under Sarah's bar in every case
+tested. This was measured on a 4-core dev machine inside a shared/sandboxed
+environment; real deployment hardware would likely do at least as well.
 
 ## How matching works
 
@@ -178,20 +220,18 @@ doesn't have this problem since it's told explicitly what each field means.
 
 ## Known limitations & trade-offs
 
-- **The ~5 second target is not comfortably met by the default OCR path** —
-  measured 4-9s/label on a 4-core dev machine, including some runs over 5s.
-  This is close to, but doesn't confidently clear, Sarah's stated bar. Options
-  for a real deployment: run on more capable hardware (this was tested in a
-  constrained/shared sandbox), or default to the Vision backend where network
-  latency to a fast model is typically the dominant cost and can be lower.
 - **Batch throughput is currently sequential for the OCR path, on purpose.**
-  Each OCR call already saturates the CPU with its own internal thread pool;
-  running several concurrently was measured to make every job 3-4x *slower*,
-  not faster, from thread oversubscription (a good reminder that CPU-bound
-  work doesn't parallelize like I/O-bound work does). A production batch
-  path would run separate worker processes sized to actual core count, or
-  default heavy batches to the Vision backend, where concurrency is real
-  (network-bound calls, not CPU-bound ones) and is enabled here.
+  This was tuned specifically for single-label latency (each OCR call now
+  runs single-threaded — see [Performance tuning](#performance-tuning-hitting-the-5-second-target)).
+  Retesting batch concurrency after that change showed only a modest ~10%
+  gain from running several single-threaded calls at once on this 4-core
+  machine — real, but not the dramatic win true multi-core parallelism would
+  give, likely because the batch shares one engine instance and Python-level
+  pre/post-processing (image decode, cropping) still serializes on the GIL.
+  A production batch path would get more out of separate worker processes
+  (one engine instance each, no GIL contention) sized to actual core count,
+  or would default heavy batches to the Vision backend, where concurrency is
+  real (network-bound calls, not CPU-bound ones) and is already enabled here.
 - **Bold-type detection is impossible with OCR alone.** Every OCR-path result
   flags this for manual confirmation rather than guessing.
 - **The brand/class-type extraction heuristic assumes a fairly standard label

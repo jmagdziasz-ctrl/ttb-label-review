@@ -56,6 +56,34 @@ WARNING_START_RE = re.compile(r"GOVERNMENT\s+WARNING\s*:?", re.IGNORECASE)
 _engine = None  # module-level singleton; loading the ONNX models is slow (~seconds)
 
 
+def _patch_onnx_single_threaded() -> None:
+    """RapidOCR's recognizer runs its (small, cheap) model once per detected
+    text line. ONNX Runtime's default execution plan spins up a multi-thread
+    pool per session sized to the machine's core count — for a model this
+    small, the thread synchronization overhead measured *higher* than the
+    compute it was supposed to save: ~5-9s/label with default threading vs.
+    ~2-5s/label single-threaded, same machine, same images (see README for
+    the full before/after numbers). RapidOCR doesn't expose a thread-count
+    kwarg, so this patches the SessionOptions class it uses before it builds
+    its inference sessions.
+    """
+    from rapidocr_onnxruntime import utils as rapidocr_utils
+
+    Original = rapidocr_utils.SessionOptions
+    if getattr(Original, "_ttb_single_threaded", False):
+        return  # already patched (e.g. a second extractor instance)
+
+    class SingleThreadedSessionOptions(Original):
+        _ttb_single_threaded = True
+
+        def __init__(self):
+            super().__init__()
+            self.intra_op_num_threads = 1
+            self.inter_op_num_threads = 1
+
+    rapidocr_utils.SessionOptions = SingleThreadedSessionOptions
+
+
 def _get_engine():
     global _engine
     if RapidOCR is None:
@@ -64,7 +92,12 @@ def _get_engine():
             "(or set ANTHROPIC_API_KEY to use the Claude Vision extractor instead)."
         )
     if _engine is None:
-        _engine = RapidOCR()
+        _patch_onnx_single_threaded()
+        # Angle classification (detecting 180°-upside-down text) is skipped:
+        # it's a whole extra model pass per text line, and label photos are
+        # taken deliberately right-side up by an agent, not randomly rotated —
+        # measured negligible (<0.1s) benefit against a real time cost.
+        _engine = RapidOCR(use_angle_cls=False)
     return _engine
 
 
