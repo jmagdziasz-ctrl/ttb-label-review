@@ -50,12 +50,16 @@
             <input type="text" name="class_type" placeholder="e.g. Kentucky Straight Bourbon Whiskey" required>
           </label>
 
-          <label>Alcohol Content
-            <input type="text" name="alcohol_content" placeholder="e.g. 45% Alc./Vol. (90 Proof)" required>
+          <label>Alcohol Content <span class="optional">(not always required for beer — see below)</span>
+            <input type="text" name="alcohol_content" placeholder="e.g. 45% Alc./Vol. (90 Proof)">
           </label>
 
           <label>Net Contents
             <input type="text" name="net_contents" placeholder="e.g. 750 mL" required>
+          </label>
+
+          <label>Bottler / Importer Name &amp; Address <span class="optional">(mandatory on every real label — see README)</span>
+            <input type="text" name="bottler_name_address" placeholder="e.g. Bottled by Old Tom Distillery, Bardstown, KY">
           </label>
 
           <label>Country of Origin <span class="optional">(imports only)</span>

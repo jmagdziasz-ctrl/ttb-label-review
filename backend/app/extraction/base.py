@@ -15,6 +15,7 @@ class ExtractedLabel:
     net_contents: Optional[str] = None
     government_warning: Optional[str] = None
     country_of_origin: Optional[str] = None
+    bottler_name_address: Optional[str] = None
 
     raw_text: str = ""
     confidence: Optional[float] = None  # 0-1, method-specific meaning

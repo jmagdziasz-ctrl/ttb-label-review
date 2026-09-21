@@ -154,6 +154,78 @@ def test_overall_pass():
     assert result.overall_status == OverallStatus.PASS
 
 
+def test_bottler_name_address_compared_when_provided():
+    # Mandatory on every real label per TTB regs (27 CFR 5.66-5.68 for
+    # spirits, 4.35 for wine, 7.66-7.68 for malt beverages) — confirmed via
+    # ttb.gov's own mandatory-label-information checklists.
+    application = ApplicationData(
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        net_contents="750 mL",
+        bottler_name_address="Produced and Bottled by Old Tom Distillery, Bardstown, KY",
+    )
+    extracted = ExtractedLabel(
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        net_contents="750 mL",
+        bottler_name_address="Produced and Bottled by Someone Else Entirely, Ohio",
+        government_warning=CANONICAL_WARNING,
+        warning_header_bold=True,
+        method="ocr",
+    )
+    result = build_review_result(application, extracted, processing_time_ms=100)
+    bottler_field = next(f for f in result.fields if f.field == "bottler_name_address")
+    assert bottler_field.status == FieldStatus.MISMATCH
+    assert result.overall_status == OverallStatus.FAIL
+
+
+def test_bottler_name_address_not_checked_when_not_provided():
+    # Left optional for backward compatibility with data collected before
+    # this field existed (see models.py) — omitting it should not itself
+    # produce a field result or count against the label.
+    application = ApplicationData(
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        net_contents="750 mL",
+    )
+    extracted = ExtractedLabel(
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        net_contents="750 mL",
+        government_warning=CANONICAL_WARNING,
+        warning_header_bold=True,
+        method="ocr",
+    )
+    result = build_review_result(application, extracted, processing_time_ms=100)
+    assert not any(f.field == "bottler_name_address" for f in result.fields)
+    assert result.overall_status == OverallStatus.PASS
+
+
+def test_alcohol_content_optional_for_beer_without_one():
+    # 27 CFR 7.65: mandatory for malt beverages only if the product contains
+    # alcohol derived from added flavors/ingredients, or a state requires
+    # it — otherwise a compliant beer label can have no ABV statement at
+    # all. Omitting it from the application shouldn't be treated as a
+    # missing/failed field the way it would for spirits or wine.
+    application = ApplicationData(
+        beverage_type="beer",
+        brand_name="RIVER BEND BREWING",
+        class_type="India Pale Ale",
+        net_contents="12 fl. oz.",
+    )
+    extracted = ExtractedLabel(
+        brand_name="RIVER BEND BREWING",
+        class_type="India Pale Ale",
+        net_contents="12 fl. oz.",
+        government_warning=CANONICAL_WARNING,
+        warning_header_bold=True,
+        method="ocr",
+    )
+    result = build_review_result(application, extracted, processing_time_ms=100)
+    assert not any(f.field == "alcohol_content" for f in result.fields)
+    assert result.overall_status == OverallStatus.PASS
+
+
 def test_ocr_missing_field_is_needs_review_not_fail():
     # OCR's text detector can miss a region entirely (e.g. a blurry photo);
     # that should prompt a human look, not an automatic compliance fail.

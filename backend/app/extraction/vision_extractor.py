@@ -35,6 +35,7 @@ Extract exactly the following fields as they appear on the label, as literally a
 - net_contents (e.g. "750 mL")
 - government_warning (the FULL text of the government warning statement, transcribed exactly, verbatim, including punctuation)
 - country_of_origin (if present, else null)
+- bottler_name_address (the full name-and-address statement, e.g. "Bottled by Old Tom Distillery, Bardstown, KY" — this is a required disclosure on real labels, transcribe it exactly if present, else null)
 - warning_header_bold (true/false: is the text "GOVERNMENT WARNING:" rendered in bold type?)
 - warning_header_allcaps (true/false: is "GOVERNMENT WARNING:" rendered in all capital letters?)
 - confidence (0.0-1.0: your confidence that you read this label correctly - lower it for blur, glare, extreme angle, tiny text, or partial occlusion)
@@ -89,6 +90,7 @@ class VisionExtractor(LabelExtractor):
             net_contents=parsed.get("net_contents"),
             government_warning=parsed.get("government_warning"),
             country_of_origin=parsed.get("country_of_origin"),
+            bottler_name_address=parsed.get("bottler_name_address"),
             raw_text=text,
             confidence=parsed.get("confidence"),
             warning_header_bold=parsed.get("warning_header_bold"),

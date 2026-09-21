@@ -173,9 +173,16 @@ and inline rationale. Summary:
   never cause a false mismatch. There's also a sanity check that the label's
   own stated proof is internally consistent with its own stated ABV (proof
   should be exactly 2× the percentage) — this catches labels that are simply
-  wrong about themselves, independent of what the application says.
+  wrong about themselves, independent of what the application says. This
+  field is optional on the application: it's only checked if provided, since
+  it's not unconditionally mandatory for malt beverages (27 CFR 7.65) the
+  way it is for spirits and wine — see [TTB requirements coverage](#ttb-requirements-coverage) below.
 - **Net contents:** same fuzzy-then-numeric approach, with unit conversion
   (mL/L/fl oz) before comparing quantities.
+- **Bottler/importer name and address:** same fuzzy text comparison as
+  brand/class-type. Optional on the application for backward compatibility,
+  but this is mandatory on every real label (27 CFR 5.66-5.68 for spirits,
+  4.35 for wine, 7.66-7.68 for malt beverages) — see below.
 - **Government warning:** compared against the exact statutory text (27 CFR
   16.21) if the application doesn't supply custom text to check against.
   Unlike every other field, this is **not** fuzzy-matched — the statute
@@ -245,6 +252,74 @@ instead, the image is very likely inverted, so it gets rotated 180° and
 re-extracted automatically (double the OCR cost, but only for this rare
 case — see `sample_labels/upside_down_label.png` and
 [`ocr_extractor.py`](backend/app/extraction/ocr_extractor.py)).
+
+## TTB requirements coverage
+
+The spec's own list of common label elements was checked directly against
+TTB's published mandatory-information checklists rather than assumed
+correct — TTB publishes a separate checklist per beverage type, since the
+rules genuinely differ:
+
+- [Distilled Spirits Labeling: Checklist of Mandatory Label Information](https://www.ttb.gov/regulated-commodities/beverage-alcohol/distilled-spirits/ds-labeling-home/ds-checklist) ([PDF](https://www.ttb.gov/system/files/images/labeling-ds/ds-labeling-checklist.pdf), 27 CFR part 5)
+- [Wine Labeling: Checklist of Mandatory Label Information](https://www.ttb.gov/regulated-commodities/beverage-alcohol/wine/labeling-wine/wine-labeling-checklist-of-mandatory-label-information) ([PDF](https://www.ttb.gov/system/files/images/wine-label/wine-labeling-checklist.pdf), 27 CFR part 4)
+- [Malt Beverage Labeling: Checklist of Mandatory Label Information](https://www.ttb.gov/beer/labeling/malt-beverage-labeling-checklist) ([PDF](https://www.ttb.gov/system/files/images/beer/labeling/malt-beverage-labeling-checklist-information.pdf), 27 CFR part 7)
+
+**What this found and what changed as a result:**
+
+- **Bottler/importer name and address was completely missing.** It's
+  mandatory on every real label across all three beverage types (27 CFR
+  5.66-5.68 for spirits, 4.35 for wine, 7.66-7.68 for malt beverages) — and
+  it was even in the original spec's own list of common elements, so this
+  wasn't a new requirement to discover, just one that hadn't been wired up
+  yet. Now extracted, compared, and optional on the application (for
+  backward compatibility with data collected before the field existed) —
+  see `bottler_name_address` in [`models.py`](backend/app/models.py). While
+  fixing this, a real bug turned up in the sample generator: the "Produced
+  and Bottled by..." line was hardcoded to "Old Tom Distillery" regardless
+  of the label's actual brand, so every non-Old-Tom sample was printing a
+  bottler line that didn't match its own brand name. Fixed to use the
+  label's real brand by default.
+- **Alcohol content isn't unconditionally mandatory for malt beverages.**
+  The spec's own brief already flagged this as a nuance ("with some
+  exceptions for certain wine/beer"), and TTB's checklist confirms exactly
+  what the exception is: for beer, an ABV statement is required only if the
+  product contains alcohol derived from added flavors or non-beverage
+  ingredients (excluding hop extract), or if a state requires it (27 CFR
+  7.65) — otherwise it's legitimately absent. `alcohol_content` is now
+  optional on the application (previously it was required for every
+  beverage type, which would have wrongly flagged a compliant beer label
+  with no ABV statement as missing one).
+- **The health warning statement's exact requirements were already
+  right**, cross-checked against TTB's own checklist wording: exact text,
+  "GOVERNMENT WARNING" in capital letters and bold, and the "S" in Surgeon
+  and "G" in General capitalized. Matches [`warning_text.py`](backend/app/warning_text.py)
+  and the strict (non-fuzzy) comparison in `compare_warning()`.
+
+**What TTB requires that this tool deliberately does not check**, because
+doing so would mean collecting production details this application form
+was never scoped to capture — brand name, class/type, ABV, net contents,
+warning, country of origin, and bottler/importer are the core fields this
+tool is built around, and these are additional, narrower disclosures:
+
+| Requirement | When it applies | Citation |
+|---|---|---|
+| Sulfite declaration | Product has ≥10 ppm total SO₂ | 27 CFR 5.63(c)(7) / 4.32(e) / 7.63(b)(3) |
+| FD&C Yellow #5 disclosure | That colorant is used | 27 CFR 5.63(c)(5) / 4.32(c) / 7.63(b)(1) |
+| Cochineal extract/carmine disclosure | Either is used | 27 CFR 5.63(c)(6) / 4.32(d) / 7.63(b)(2) |
+| Aspartame declaration | Beer containing aspartame | 27 CFR 7.63(b)(4) |
+| Statement of age | Whisky aged <4 years, certain brandies, etc. | 27 CFR 5.74 |
+| Treatment with wood | Whisky/brandy treated with wood other than oak containers | 27 CFR 5.73 |
+| State of distillation | Certain whisky not distilled in its labeled state | 27 CFR 5.66(f) |
+| Commodity statements | Neutral spirits/gin from continuous distillation, or blends | 27 CFR 5.71 |
+| Appellation of origin | Wine with a varietal, vintage, or semi-generic designation | 27 CFR 4.25, 4.34 |
+| Percentage of foreign wine | Blends of American and foreign wine, if labeled as such | 27 CFR 4.32(a)(4) |
+| "Same field of vision" placement | Brand, ABV, and class/type on spirits labels | 27 CFR 5.63 |
+
+That last one is worth calling out specifically: it's a *layout* rule
+(these three fields must be visible together without turning the bottle),
+not a content rule, and this tool only ever sees one flat image with no
+notion of "which side of the bottle is this," so it isn't something OCR or
+Vision extraction could check even if scope allowed for it.
 
 ## Handling imperfect photos (angle, lighting, glare)
 
@@ -347,9 +422,12 @@ title-case violation still fails correctly — see
 - `GET /api/health` — status check, reports which extraction method is active by default.
 - `GET /api/manifest-template` — downloads the batch CSV template.
 - `POST /api/review` — single review. Multipart form: `image` (file) +
-  `brand_name`, `class_type`, `alcohol_content`, `net_contents`,
-  `beverage_type`, `government_warning` (optional), `country_of_origin`
-  (optional). Optional `?method=ocr|vision` query param.
+  `brand_name`, `class_type`, `net_contents`, `beverage_type` (required);
+  `alcohol_content`, `government_warning`, `country_of_origin`,
+  `bottler_name_address` (all optional — see
+  [TTB requirements coverage](#ttb-requirements-coverage) for why alcohol
+  content in particular isn't always required). Optional `?method=ocr|vision`
+  query param.
 - `POST /api/review/batch` — batch review. Multipart form: `manifest` (CSV
   file) + `images` (multiple files). Same optional `?method=` param.
 

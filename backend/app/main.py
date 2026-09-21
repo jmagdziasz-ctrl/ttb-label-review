@@ -64,20 +64,22 @@ async def review_single(
     beverage_type: BeverageType = Form(BeverageType.spirits),
     brand_name: str = Form(...),
     class_type: str = Form(...),
-    alcohol_content: str = Form(...),
+    alcohol_content: str | None = Form(None),
     net_contents: str = Form(...),
     government_warning: str | None = Form(None),
     country_of_origin: str | None = Form(None),
+    bottler_name_address: str | None = Form(None),
     method: str | None = Query(None, description="Force 'ocr' or 'vision'"),
 ):
     application = ApplicationData(
         beverage_type=beverage_type,
         brand_name=brand_name,
         class_type=class_type,
-        alcohol_content=alcohol_content,
+        alcohol_content=alcohol_content or None,
         net_contents=net_contents,
         government_warning=government_warning or None,
         country_of_origin=country_of_origin or None,
+        bottler_name_address=bottler_name_address or None,
     )
     image_bytes = await image.read()
     try:

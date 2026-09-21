@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 from .models import ApplicationData
 
-REQUIRED_COLUMNS = {"filename", "brand_name", "class_type", "alcohol_content", "net_contents"}
+REQUIRED_COLUMNS = {"filename", "brand_name", "class_type", "net_contents"}
 
 
 class ManifestError(Exception):
@@ -42,10 +42,11 @@ def parse_manifest(csv_bytes: bytes) -> list[tuple[str, ApplicationData]]:
                 beverage_type=(row.get("beverage_type") or "spirits").strip().lower(),
                 brand_name=(row.get("brand_name") or "").strip(),
                 class_type=(row.get("class_type") or "").strip(),
-                alcohol_content=(row.get("alcohol_content") or "").strip(),
+                alcohol_content=(row.get("alcohol_content") or "").strip() or None,
                 net_contents=(row.get("net_contents") or "").strip(),
                 government_warning=(row.get("government_warning") or "").strip() or None,
                 country_of_origin=(row.get("country_of_origin") or "").strip() or None,
+                bottler_name_address=(row.get("bottler_name_address") or "").strip() or None,
             )
         except ValidationError as exc:
             raise ManifestError(f"Row {i} ({filename}): {exc}") from exc
@@ -55,7 +56,7 @@ def parse_manifest(csv_bytes: bytes) -> list[tuple[str, ApplicationData]]:
 
 CSV_TEMPLATE = (
     "filename,beverage_type,brand_name,class_type,alcohol_content,net_contents,"
-    "government_warning,country_of_origin\n"
+    "government_warning,country_of_origin,bottler_name_address\n"
     "old_tom_bourbon.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,"
-    "45% Alc./Vol. (90 Proof),750 mL,,\n"
+    '45% Alc./Vol. (90 Proof),750 mL,,,"Bottled by Old Tom Distillery, Bardstown, KY"\n'
 )

@@ -1,11 +1,11 @@
-filename,beverage_type,brand_name,class_type,alcohol_content,net_contents,government_warning,country_of_origin
-old_tom_bourbon_correct.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-stones_throw_case_diff.png,spirits,STONE'S THROW,Straight Rye Whiskey,40% Alc./Vol. (80 Proof),750 mL,,
-wrong_abv_label.png,spirits,RIVERBEND DISTILLERS,Blended Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-bad_warning_label.png,spirits,HARBOR LIGHT SPIRITS,London Dry Gin,47% Alc./Vol. (94 Proof),750 mL,,
-blurry_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-inconsistent_proof_label.png,spirits,CROOKED CREEK,Straight Bourbon Whiskey,45% Alc./Vol. (100 Proof),750 mL,,
-upside_down_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-steep_angle_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-dark_noisy_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
-glare_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,
+filename,beverage_type,brand_name,class_type,alcohol_content,net_contents,government_warning,country_of_origin,bottler_name_address
+old_tom_bourbon_correct.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"
+stones_throw_case_diff.png,spirits,STONE'S THROW,Straight Rye Whiskey,40% Alc./Vol. (80 Proof),750 mL,,,"Produced and Bottled by Stone's Throw, Bardstown, KY"
+wrong_abv_label.png,spirits,RIVERBEND DISTILLERS,Blended Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by RIVERBEND DISTILLERS, Bardstown, KY"
+bad_warning_label.png,spirits,HARBOR LIGHT SPIRITS,London Dry Gin,47% Alc./Vol. (94 Proof),750 mL,,,"Produced and Bottled by HARBOR LIGHT SPIRITS, Bardstown, KY"
+blurry_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"
+inconsistent_proof_label.png,spirits,CROOKED CREEK,Straight Bourbon Whiskey,45% Alc./Vol. (100 Proof),750 mL,,,"Produced and Bottled by CROOKED CREEK, Bardstown, KY"
+upside_down_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"
+steep_angle_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"
+dark_noisy_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"
+glare_label.png,spirits,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,,"Produced and Bottled by OLD TOM DISTILLERY, Bardstown, KY"

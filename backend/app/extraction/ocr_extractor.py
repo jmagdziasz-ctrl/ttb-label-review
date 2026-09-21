@@ -77,6 +77,15 @@ NET_CONTENTS_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*(mL|ml|ML|L|l|liters?|fl\.?\s*oz\.?)", re.IGNORECASE
 )
 WARNING_START_RE = re.compile(r"GOVERNMENT\s+WARNING\s*:?", re.IGNORECASE)
+# Bottler/importer name and address is mandatory on every real label (27 CFR
+# 5.66-5.68 for spirits, 4.35 for wine, 7.66-7.68 for malt beverages), and by
+# regulation must immediately follow one of these phrases with no intervening
+# text — so the phrase itself is a reliable anchor to search for.
+BOTTLER_RE = re.compile(
+    r"(?:Produced\s+and\s+Bottled\s+by|Bottled\s+by|Bottled\s+for|Imported\s+by|"
+    r"Distributed\s+by)\s+(.+)",
+    re.IGNORECASE,
+)
 
 # Tried in this order as a fallback when the warning isn't found on the
 # first pass. Neither is a strict improvement over the other — each fixed
@@ -272,6 +281,14 @@ class OcrExtractor(LabelExtractor):
         net_match = NET_CONTENTS_RE.search(full_text)
         if net_match:
             result.net_contents = net_match.group(0).strip()
+
+        bottler_match = BOTTLER_RE.search(full_text)
+        if bottler_match:
+            # Capture just the matched line, not everything after it — the
+            # regex's `.+` is greedy and full_text is newline-joined, but a
+            # bare `.` doesn't cross newlines, so this naturally stops at
+            # end of line.
+            result.bottler_name_address = bottler_match.group(0).strip()
 
         warning_top: float | None = None
         warning_line = next((l for l in lines if WARNING_START_RE.search(l["text"])), None)

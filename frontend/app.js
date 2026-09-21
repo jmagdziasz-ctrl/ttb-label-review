@@ -15,6 +15,7 @@ const OVERALL_ICON = { pass: "✅", needs_review: "⚠️", fail: "❌" };
 const FIELD_LABELS = {
   brand_name: "Brand Name", class_type: "Class / Type", alcohol_content: "Alcohol Content",
   net_contents: "Net Contents", government_warning: "Government Warning", country_of_origin: "Country of Origin",
+  bottler_name_address: "Bottler / Importer Name & Address",
 };
 
 function showToast(message) {

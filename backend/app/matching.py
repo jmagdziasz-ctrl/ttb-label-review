@@ -239,12 +239,22 @@ def build_review_result(
     fields = [
         compare_text_field("brand_name", application.brand_name, extracted.brand_name),
         compare_text_field("class_type", application.class_type, extracted.class_type),
-        compare_abv(application.alcohol_content, extracted.alcohol_content),
         compare_net_contents(application.net_contents, extracted.net_contents),
         compare_warning(application.government_warning, extracted),
     ]
+    # Alcohol content is only unconditionally mandatory for spirits and wine;
+    # for malt beverages it's required only if the beer contains alcohol from
+    # added flavors/ingredients or a state requires it (27 CFR 7.65) — a
+    # compliant beer label can legitimately have no ABV statement at all. We
+    # don't model that narrower trigger (would need data our application form
+    # doesn't collect), so when the applicant didn't provide one, this field
+    # is skipped rather than flagged — silence isn't a violation here.
+    if application.alcohol_content:
+        fields.append(compare_abv(application.alcohol_content, extracted.alcohol_content))
     if application.country_of_origin:
         fields.append(compare_text_field("country_of_origin", application.country_of_origin, extracted.country_of_origin))
+    if application.bottler_name_address:
+        fields.append(compare_text_field("bottler_name_address", application.bottler_name_address, extracted.bottler_name_address))
 
     # A "missing" field under OCR is ambiguous: it might genuinely be absent
     # from the label, or the OCR text detector might have simply failed to

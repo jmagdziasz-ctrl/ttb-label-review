@@ -52,6 +52,7 @@ def make_label(
     class_type: str = "Kentucky Straight Bourbon Whiskey",
     abv_line: str = "45% Alc./Vol. (90 Proof)",
     net_contents: str = "750 mL",
+    bottler_line: str | None = None,
     warning_header: str = WARNING_HEADER,
     warning_body: str = WARNING_BODY,
     warning_bold: bool = True,
@@ -85,8 +86,15 @@ def make_label(
     draw.text((W / 2, y), net_contents, font=abv_font, fill=(50, 35, 20), anchor="ma")
     y += 80
 
-    draw.text((W / 2, y), "Produced and Bottled by Old Tom Distillery, Bardstown, KY",
-              font=_font(20), fill=(60, 45, 25), anchor="ma")
+    # Bug fixed during TTB-requirements review: this used to be hardcoded to
+    # "Old Tom Distillery" regardless of the label's actual brand, which
+    # silently mismatched every other sample. Defaults to the label's own
+    # brand now, matching what a real label would actually say.
+    draw.text(
+        (W / 2, y),
+        bottler_line or f"Produced and Bottled by {brand_name}, Bardstown, KY",
+        font=_font(20), fill=(60, 45, 25), anchor="ma",
+    )
     y += 60
 
     header_text = warning_upper_override if warning_upper_override is not None else warning_header
