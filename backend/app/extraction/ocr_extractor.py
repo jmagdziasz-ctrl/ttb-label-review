@@ -23,11 +23,21 @@ false signal was caught during testing and swapped brand/class on
 several samples.) Alcohol content, net contents, and the government
 warning are recovered via regex over the concatenated text instead, since
 those follow fairly fixed vocabulary regardless of layout.
+
+Because this image is part of an application a submitter sends in — not a
+photo a TTB agent frames and takes themselves — it can arrive upside-down.
+RapidOCR's angle classifier corrects each line's *text* for that, but not
+the page layout our brand/class heuristic depends on, so `extract()` also
+checks whether the government warning (always the label's last content
+block) was found sitting above most other text; if so, it rotates the
+whole image 180° and re-extracts. See `sample_labels/upside_down_label.png`
+for a worked example.
 """
 from __future__ import annotations
 
 import io
 import re
+import statistics
 
 import numpy as np
 from PIL import Image
@@ -93,11 +103,12 @@ def _get_engine():
         )
     if _engine is None:
         _patch_onnx_single_threaded()
-        # Angle classification (detecting 180°-upside-down text) is skipped:
-        # it's a whole extra model pass per text line, and label photos are
-        # taken deliberately right-side up by an agent, not randomly rotated —
-        # measured negligible (<0.1s) benefit against a real time cost.
-        _engine = RapidOCR(use_angle_cls=False)
+        # Angle classification (detecting 180°-upside-down text) stays ON:
+        # this image is part of an application submitted to TTB, not a
+        # photo an agent took themselves — a submitter could send it in
+        # any orientation. Measured cost is negligible anyway (<0.1s), so
+        # there's no real tradeoff to make here.
+        _engine = RapidOCR()
     return _engine
 
 
@@ -120,6 +131,42 @@ class OcrExtractor(LabelExtractor):
 
     def extract(self, image_bytes: bytes) -> ExtractedLabel:
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        result, warning_top, other_tops_median = self._extract_from_image(image)
+
+        # RapidOCR's angle classifier corrects each detected line's *text*
+        # (so a word is still read right-way-round even upside-down), but it
+        # does not correct the overall page layout our brand/class heuristic
+        # relies on: a fully inverted submission still gets read top-to-bottom
+        # in image coordinates, which is now bottom-to-top relative to the
+        # real label. The government warning is a reliable anchor for
+        # catching this — it's always the label's last content block, so on
+        # a right-way-up label it should sit *below* most other text. If it's
+        # sitting above the median of everything else instead, the page is
+        # very likely upside-down; this image is an application attachment
+        # from a submitter, not a photo an agent controls, so this is a real
+        # case, not a hypothetical one.
+        if warning_top is not None and other_tops_median is not None and warning_top <= other_tops_median:
+            rotated = image.rotate(180)
+            rotated_result, rotated_warning_top, rotated_other_median = self._extract_from_image(rotated)
+            fixed = (
+                rotated_warning_top is None
+                or rotated_other_median is None
+                or rotated_warning_top > rotated_other_median
+            )
+            if fixed:
+                rotated_result.notes.insert(
+                    0,
+                    "Image appeared to be upside-down (the government warning was found above "
+                    "most other label text); automatically rotated 180° and re-analyzed.",
+                )
+                return rotated_result
+            result.notes.append(
+                "This label's layout looks unusual (the government warning was found above "
+                "most other label text) — please confirm the image orientation manually."
+            )
+        return result
+
+    def _extract_from_image(self, image: Image.Image) -> tuple[ExtractedLabel, float | None, float | None]:
         engine = _get_engine()
         ocr_result, _ = engine(np.array(image))
         ocr_result = ocr_result or []
@@ -159,6 +206,8 @@ class OcrExtractor(LabelExtractor):
         if net_match:
             result.net_contents = net_match.group(0).strip()
 
+        warning_top: float | None = None
+        warning_line = next((l for l in lines if WARNING_START_RE.search(l["text"])), None)
         warning = _find_warning(full_text)
         if warning:
             result.government_warning = warning
@@ -167,10 +216,14 @@ class OcrExtractor(LabelExtractor):
             result.notes.append(
                 "Bold formatting of the warning header cannot be verified by OCR; confirm visually."
             )
+            if warning_line is not None:
+                warning_top = warning_line["top"]
 
         if overall_conf < 0.6:
             result.notes.append(
                 f"Low OCR confidence ({overall_conf:.0%}). Image may be blurry, angled, or low-resolution."
             )
 
-        return result
+        other_tops = [l["top"] for l in lines if l is not warning_line]
+        other_tops_median = statistics.median(other_tops) if other_tops else None
+        return result, warning_top, other_tops_median

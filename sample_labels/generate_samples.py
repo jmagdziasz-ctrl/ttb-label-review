@@ -162,6 +162,18 @@ def main():
         abv_line="45% Alc./Vol. (100 Proof)",
     )
 
+    # 7. Submitted upside-down. This is an application attachment, not a
+    #    photo a TTB agent takes themselves, so a submitter really could
+    #    send it in any orientation — caught during review of this
+    #    prototype, see ocr_extractor.py's orientation-detection logic.
+    make_label(
+        "upside_down_label.png",
+        brand_name="OLD TOM DISTILLERY",
+        class_type="Kentucky Straight Bourbon Whiskey",
+        abv_line="45% Alc./Vol. (90 Proof)",
+        rotate=180,
+    )
+
 
 if __name__ == "__main__":
     main()

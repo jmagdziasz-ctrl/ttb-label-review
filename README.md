@@ -128,11 +128,15 @@ is applied by patching the `SessionOptions` class it builds its sessions
 from — see `_patch_onnx_single_threaded()` in
 [`ocr_extractor.py`](backend/app/extraction/ocr_extractor.py).
 
-Also disabled: RapidOCR's angle classifier, which runs a whole extra model
-pass per detected line to check whether it's upside-down. That's a
-reasonable thing to check for photos scraped from the wild, but a label
-photo taken deliberately by an agent is essentially never rotated 180° —
-measured savings were small (<0.1s) but real, and free.
+RapidOCR's angle classifier — a whole extra model pass per detected line to
+check whether it's upside-down — was disabled in an earlier draft on the
+assumption that a label photo is essentially never rotated 180°. That
+assumption doesn't hold: this image arrives as part of an applicant's
+submission, not a photo a TTB agent takes themselves, so a submitter could
+send it in any orientation (the same image-quality unpredictability Jenny
+raised in the discovery notes). Since the classifier's measured cost is
+negligible anyway (<0.1s), it stays on — there was never a real tradeoff
+to make here, just a wrong assumption caught before it shipped.
 
 One thing that looked promising but wasn't, worth recording so it isn't
 re-tried later: **increasing the recognizer's batch size** (to fit more
@@ -217,6 +221,24 @@ in reading order turned out to be the more reliable signal. This is still a
 heuristic, though, and will misfire on labels with an unusual layout (e.g.
 brand name below class/type, or a multi-line brand name) — the Vision backend
 doesn't have this problem since it's told explicitly what each field means.
+
+**Position in reading order breaks completely if the whole image is
+upside-down**, though, and that's a real scenario here, not a hypothetical
+one: this image is part of an application a *submitter* sends in, not a
+photo a TTB agent frames and takes themselves, so it can arrive rotated.
+RapidOCR's built-in angle classifier corrects each line's *text* for this
+(so a word still reads correctly even upside-down), but not the page
+*layout* the heuristic above depends on — an inverted image still gets
+read top-to-bottom in image coordinates, which is now bottom-to-top
+relative to the real label (caught during testing: an upside-down sample
+extracted "health problems." — the actual last line of the warning
+statement — as the brand name). The fix: the government warning is always
+the label's last content block, so on a right-way-up label it should sit
+below most other text; if OCR finds it sitting *above* most other text
+instead, the image is very likely inverted, so it gets rotated 180° and
+re-extracted automatically (double the OCR cost, but only for this rare
+case — see `sample_labels/upside_down_label.png` and
+[`ocr_extractor.py`](backend/app/extraction/ocr_extractor.py)).
 
 ## Known limitations & trade-offs
 
