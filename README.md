@@ -35,11 +35,6 @@ from those interviews (cited inline).
   check, separate from the fuzzy-matching used everywhere else.
 - **Batch upload**, because Sarah described importers dropping 200-300
   applications at once and agents processing them one at a time today.
-- **A completely hands-off mode too** ([`watch_folder.py`](backend/watch_folder.py)):
-  drop application folders into an inbox and the tool sorts them into
-  `approved/` or `needs_review/` on its own — no one has to open the app, click
-  upload, or wait for a page to respond at all. See
-  [Hands-off automation](#hands-off-automation-watch_folderpy).
 - **Simple, obvious UI.** Two tabs, big buttons, color-coded pass/fail/review
   badges, no settings to hunt for — aimed at Sarah's "my 73-year-old mother"
   bar, not Jenny's.
@@ -86,75 +81,6 @@ why they were judged to match or not.
 application (the `filename` column must match an uploaded image's filename),
 select all the images, click Review Batch. You get a summary count plus a
 sortable-by-glance table; click any row to expand its field-by-field detail.
-
-## Hands-off automation (`watch_folder.py`)
-
-The web UI is for someone actively reviewing a label right now. For the
-"take the user out of it entirely" case, there's a separate script that
-needs no browser, no clicking, and no one waiting on a response:
-
-```bash
-cd backend
-python watch_folder.py                 # scan once and exit — for cron / Task Scheduler
-python watch_folder.py --watch         # keep running, poll every 15s (--interval to change)
-```
-
-A label never arrives on its own in the real workflow — it's always part of
-a specific application, submitted together with the brand name, ABV, etc.
-So the unit of work is an **application package**: one subfolder containing
-the label image plus an `application.json` with the submitted fields. Drop
-that folder into `watch_data/inbox/`:
-
-```
-watch_data/inbox/12345/
-  label.jpg
-  application.json
-```
-
-```json
-{
-  "brand_name": "OLD TOM DISTILLERY",
-  "class_type": "Kentucky Straight Bourbon Whiskey",
-  "alcohol_content": "45% Alc./Vol. (90 Proof)",
-  "net_contents": "750 mL",
-  "beverage_type": "spirits"
-}
-```
-
-Once that folder stops changing (a simple two-snapshot check makes sure
-nothing's still mid-copy), it gets reviewed automatically and the *whole
-folder* — image, application data, and a new plain-English `report.txt` — is
-moved into one of exactly two places:
-
-- **`watch_data/approved/`** — a clean pass, nothing to look at.
-- **`watch_data/needs_review/`** — anything else: a real mismatch, a field
-  the extractor couldn't verify, a low-confidence/unreadable image, or even
-  a malformed package (missing `application.json`, more than one image,
-  etc.). Malformed packages are *never* silently dropped — they land here
-  with a report explaining exactly what was wrong, so nothing goes missing.
-
-Every run also appends one line to `watch_data/review_log.csv` — a running
-audit trail (timestamp, outcome, confidence, per-field summary) of
-everything the tool has ever looked at, independent of whatever an agent
-does with the sorted folders afterward.
-
-**Why one-shot-by-default rather than a persistent background service:**
-Marcus's notes describe locked-down government infrastructure where
-standing up a new persistent process is its own change-control conversation.
-A script that scans once and exits is just a scheduled task
-(Windows Task Scheduler / cron) — the kind of thing IT already knows how to
-approve and monitor. `--watch` is there if continuous polling is cleared
-instead; it's the same script either way, not a separate deployment.
-
-**Why it needs `application.json` and won't just review bare images:** without
-knowing what was actually applied for, the tool can't do the thing it's
-for — checking the label *against the application*. Give it only an image
-and the best it could do is check the label against itself (is the warning
-text exact, is the stated proof consistent with the stated ABV), which
-silently drops the majority of what agents described their actual daily
-work being. A malformed or missing `application.json` is treated as a
-"needs review" case with a clear explanation, not processed as if the label
-were self-evidently fine, and not silently skipped either.
 
 ## Extraction backends
 
@@ -340,22 +266,10 @@ backend/
       factory.py            Picks a backend based on env/request
   tests/
     test_matching.py     Unit tests for the matching engine
-    test_watch_folder.py  Unit tests for the folder-watcher's routing logic
-  watch_folder.py        Hands-off folder watcher (see above)
   requirements.txt
 frontend/
   index.html / style.css / app.js   Plain HTML/JS UI, no build step
 sample_labels/
   generate_samples.py   Generates synthetic test label images
   manifest.csv           Example batch manifest for the generated samples
-  example_application_package/  A ready-to-try watch_folder.py input (see below)
-```
-
-To try `watch_folder.py` immediately without assembling your own test data:
-
-```bash
-mkdir -p backend/watch_data/inbox
-cp -r sample_labels/example_application_package backend/watch_data/inbox/example_001
-cd backend
-python watch_folder.py
 ```
