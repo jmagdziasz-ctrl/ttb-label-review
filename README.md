@@ -9,6 +9,45 @@ Built in response to the discovery interviews with TTB's Label Compliance
 Division. The design choices below trace directly back to specific quotes
 from those interviews (cited inline).
 
+## Approach, tools, and assumptions
+
+**Approach:** two-tier label extraction — a free, fully offline OCR reader
+by default, with an optional Claude Vision upgrade for harder photos — feeds
+into a matching engine that's deliberately lenient about cosmetic
+differences (casing, punctuation, spacing) but strict about the one field
+regulation doesn't allow any deviation on (the government warning text).
+Every field the tool can't confidently judge is flagged for a human rather
+than guessed at, in either direction — see
+[Why it's built this way](#why-its-built-this-way) for the full reasoning
+tied back to specific discovery-interview feedback.
+
+**Tools used:**
+- **Backend:** Python 3.10+, FastAPI, Pydantic, Uvicorn
+- **Label reading:** [`rapidocr-onnxruntime`](https://github.com/RapidAI/RapidOCR) (free, offline, ONNX-based OCR — the default) and, optionally, Claude (Vision) via the `anthropic` Python SDK
+- **Frontend:** plain HTML/CSS/JavaScript — no framework, no build step
+- **Testing:** `pytest`
+- **Sample data:** synthetic label images generated with Pillow (`sample_labels/generate_samples.py`), since no real submitted label photos were available
+
+**Key assumptions made** (see [Known limitations & trade-offs](#known-limitations--trade-offs) and [TTB requirements coverage](#ttb-requirements-coverage) for the complete list and citations):
+- Each review is against one flat label image with no notion of multiple
+  label panels, so layout-only rules (e.g. brand/ABV/class-type needing to
+  share the same field of vision) can't be checked.
+- A field OCR reports as "missing" might genuinely be absent from the label,
+  or the reader might have just missed it — the tool doesn't try to guess
+  which, and always defers to a human rather than picking a side.
+- Alcohol content is only mandatory for beer in the narrower cases 27 CFR
+  7.65 specifies, not universally, since a compliant beer label can
+  legitimately omit it.
+- The tool checks that the label and application *agree*, not that the
+  class/type designation is itself a legally valid one under TTB's own
+  regulations — that's a separate, larger problem.
+- This is a standalone prototype with no COLA integration, authentication,
+  audit logging, or retention policy, per explicit scoping in the discovery
+  conversation — a production version handling real submissions would need
+  all of those.
+- Batch manifest matching assumes each uploaded image's filename is unique
+  and matches the manifest CSV's `filename` column exactly.
+
 ## Why it's built this way
 
 - **Free/offline by default, no cloud dependency.** Marcus (IT) noted the
