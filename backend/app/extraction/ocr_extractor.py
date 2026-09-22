@@ -190,14 +190,14 @@ class OcrExtractor(LabelExtractor):
             if fixed:
                 rotated_result.notes.insert(
                     0,
-                    "Image appeared to be upside-down (the government warning was found above "
-                    "most other label text); automatically rotated 180° and re-analyzed.",
+                    "This photo looked like it was upside-down, so we flipped it right-side up "
+                    "and read it again.",
                 )
                 image, result = rotated, rotated_result
             else:
                 result.notes.append(
-                    "This label's layout looks unusual (the government warning was found above "
-                    "most other label text) — please confirm the image orientation manually."
+                    "Something about this label's layout looks unusual — please double-check "
+                    "that the photo is right-side up."
                 )
 
         if result.government_warning is None:
@@ -224,20 +224,20 @@ class OcrExtractor(LabelExtractor):
         warning), so there's no reason to risk fields that already read
         correctly just because one field didn't.
         """
-        for name, transform in _ENHANCEMENTS.items():
+        for transform in _ENHANCEMENTS.values():
             enhanced_result, _, _ = self._extract_from_image(transform(image))
             if enhanced_result.government_warning is not None:
                 original.government_warning = enhanced_result.government_warning
                 original.warning_header_allcaps = enhanced_result.warning_header_allcaps
                 original.warning_header_bold = enhanced_result.warning_header_bold
                 original.notes.append(
-                    "Bold formatting of the warning header cannot be verified by OCR; confirm visually."
+                    "We can't automatically tell if the warning heading is bold — please check by eye."
                 )
                 original.notes.insert(
                     0,
-                    f"Government warning wasn't found on the original image; recovered after "
-                    f"enhancing image contrast ({name}). Original image quality may be marginal — "
-                    "consider requesting a clearer photo.",
+                    "We couldn't find the government warning at first, but found it after "
+                    "brightening and adjusting the image. The photo quality may not be great — "
+                    "you may want to ask for a clearer one.",
                 )
                 return original
         return original
@@ -264,10 +264,10 @@ class OcrExtractor(LabelExtractor):
         candidate_lines.sort(key=lambda l: l["top"])
         if candidate_lines:
             result.brand_name = candidate_lines[0]["text"]
-            result.notes.append("Brand name inferred from the topmost text on the label (layout heuristic).")
+            result.notes.append("We guessed the brand name from the top line of text on the label — please confirm it's right.")
         if len(candidate_lines) > 1:
             result.class_type = candidate_lines[1]["text"]
-            result.notes.append("Class/type inferred from the next line down (layout heuristic).")
+            result.notes.append("We guessed the class/type from the next line down — please confirm it's right.")
 
         abv_match = ABV_RE.search(full_text)
         proof_match = PROOF_RE.search(full_text)
@@ -298,14 +298,15 @@ class OcrExtractor(LabelExtractor):
             result.warning_header_allcaps = "GOVERNMENT WARNING" in full_text  # case-sensitive check
             result.warning_header_bold = None  # OCR text extraction can't tell us this
             result.notes.append(
-                "Bold formatting of the warning header cannot be verified by OCR; confirm visually."
+                "We can't automatically tell if the warning heading is bold — please check by eye."
             )
             if warning_line is not None:
                 warning_top = warning_line["top"]
 
         if overall_conf < 0.6:
             result.notes.append(
-                f"Low OCR confidence ({overall_conf:.0%}). Image may be blurry, angled, or low-resolution."
+                f"We're not very confident we read this correctly (about {overall_conf:.0%} sure). "
+                "The image may be blurry, at an angle, or low-resolution."
             )
 
         other_tops = [l["top"] for l in lines if l is not warning_line]

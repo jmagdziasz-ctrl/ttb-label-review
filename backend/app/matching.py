@@ -40,12 +40,12 @@ def compare_text_field(field: str, submitted: str | None, extracted: str | None)
     if not extracted:
         return FieldResult(
             field=field, submitted_value=submitted, extracted_value=None,
-            status=FieldStatus.MISSING, note="Field not found on label.",
+            status=FieldStatus.MISSING, note="We couldn't find this on the label.",
         )
     if not submitted:
         return FieldResult(
             field=field, submitted_value=submitted, extracted_value=extracted,
-            status=FieldStatus.NEEDS_REVIEW, note="No application value provided to compare against.",
+            status=FieldStatus.NEEDS_REVIEW, note="The application didn't include this, so there's nothing to compare it to.",
         )
 
     if submitted.strip() == extracted.strip():
@@ -56,7 +56,7 @@ def compare_text_field(field: str, submitted: str | None, extracted: str | None)
         return FieldResult(
             field=field, submitted_value=submitted, extracted_value=extracted,
             status=FieldStatus.MATCH_MINOR_DIFF,
-            note="Matches after ignoring case/punctuation/whitespace differences.",
+            note="This matches — the only difference is things like capital letters, punctuation, or spacing, not the actual wording.",
         )
 
     ratio = _similarity(loose_a, loose_b)
@@ -64,17 +64,17 @@ def compare_text_field(field: str, submitted: str | None, extracted: str | None)
         return FieldResult(
             field=field, submitted_value=submitted, extracted_value=extracted,
             status=FieldStatus.MATCH_MINOR_DIFF,
-            note=f"Near-identical ({ratio:.0%} similar); likely a typo or OCR artifact, not a substantive mismatch.",
+            note=f"Nearly identical (a {ratio:.0%} match) — likely just a small reading error, not a real difference.",
         )
     if ratio >= MINOR_DIFF_THRESHOLD:
         return FieldResult(
             field=field, submitted_value=submitted, extracted_value=extracted,
             status=FieldStatus.NEEDS_REVIEW,
-            note=f"Similar but not conclusive ({ratio:.0%} similar). Recommend agent review.",
+            note=f"Similar, but not a clear match (about {ratio:.0%} alike) — a person should take a look.",
         )
     return FieldResult(
         field=field, submitted_value=submitted, extracted_value=extracted,
-        status=FieldStatus.MISMATCH, note=f"Only {ratio:.0%} similar to the submitted value.",
+        status=FieldStatus.MISMATCH, note=f"This looks like a real difference — only about {ratio:.0%} similar to what the application says.",
     )
 
 
@@ -97,12 +97,12 @@ def compare_abv(submitted: str | None, extracted: str | None) -> FieldResult:
             return FieldResult(
                 field="alcohol_content", submitted_value=submitted, extracted_value=extracted,
                 status=FieldStatus.MATCH_MINOR_DIFF,
-                note="ABV percentage matches numerically; only surrounding text/formatting differs.",
+                note="The alcohol percentage matches — only the wording around it (like \"Alc.\" vs \"Vol.\") looks different.",
             )
         return FieldResult(
             field="alcohol_content", submitted_value=submitted, extracted_value=extracted,
             status=FieldStatus.MISMATCH,
-            note=f"Application states {sub_pct.group(1)}% but label reads {ext_pct.group(1)}%.",
+            note=f"The application says {sub_pct.group(1)}% but the label shows {ext_pct.group(1)}%.",
         )
     return base
 
@@ -119,8 +119,8 @@ def _internal_abv_consistency_note(extracted: str | None) -> str | None:
     actual_proof = float(proof.group(1))
     if abs(expected_proof - actual_proof) > 0.5:
         return (
-            f"Label is internally inconsistent: {pct.group(1)}% ABV implies "
-            f"{expected_proof:g} proof, but label states {proof.group(1)} proof."
+            f"The label doesn't add up on its own: {pct.group(1)}% alcohol should be "
+            f"about {expected_proof:g} proof, but the label says {proof.group(1)} proof."
         )
     return None
 
@@ -146,12 +146,12 @@ def compare_net_contents(submitted: str | None, extracted: str | None) -> FieldR
                 return FieldResult(
                     field="net_contents", submitted_value=submitted, extracted_value=extracted,
                     status=FieldStatus.MATCH_MINOR_DIFF,
-                    note="Same quantity once units are normalized.",
+                    note="Same amount — it's just written with different units (like mL vs. L).",
                 )
             return FieldResult(
                 field="net_contents", submitted_value=submitted, extracted_value=extracted,
                 status=FieldStatus.MISMATCH,
-                note=f"Application states {submitted} but label reads {extracted}.",
+                note=f"The application says {submitted} but the label shows {extracted}.",
             )
     return base
 
@@ -163,7 +163,7 @@ def compare_warning(submitted: str | None, extracted: ExtractedLabel) -> FieldRe
     if not label_text:
         return FieldResult(
             field="government_warning", submitted_value=target_text, extracted_value=None,
-            status=FieldStatus.MISSING, note="No government warning statement found on label.",
+            status=FieldStatus.MISSING, note="We couldn't find a government warning on the label.",
         )
 
     normalized_target = re.sub(r"\s+", " ", target_text).strip()
@@ -195,8 +195,8 @@ def compare_warning(submitted: str | None, extracted: ExtractedLabel) -> FieldRe
     if normalized_label != normalized_target:
         ratio = _similarity(normalized_label, normalized_target)
         text_note = (
-            f"Warning body text does not match the required statutory wording exactly "
-            f"({ratio:.0%} similar). The statute requires this text verbatim."
+            f"The wording doesn't exactly match the required government warning text "
+            f"(about {ratio:.0%} similar). By law, this text has to be word-for-word exact."
         )
         if status != FieldStatus.MISMATCH:
             if extracted.method == "ocr":
@@ -208,7 +208,7 @@ def compare_warning(submitted: str | None, extracted: ExtractedLabel) -> FieldRe
                 # NEEDS_REVIEW does (see the scanning-vendor pilot in the
                 # discovery notes: agents abandon tools that cry wolf).
                 status = FieldStatus.NEEDS_REVIEW
-                text_note += " OCR can occasionally miss a line of text entirely — please verify visually before rejecting."
+                text_note += " Our automatic reader can sometimes miss a whole line of text, so please double-check by eye before rejecting this label."
             else:
                 status = FieldStatus.MISMATCH
         notes.append(text_note)
@@ -219,10 +219,10 @@ def compare_warning(submitted: str | None, extracted: ExtractedLabel) -> FieldRe
     elif extracted.warning_header_bold is None:
         if status == FieldStatus.MATCH:
             status = FieldStatus.NEEDS_REVIEW
-        notes.append("Bold formatting could not be verified automatically; confirm visually.")
+        notes.append("We couldn't automatically tell whether this is bold — please check by eye.")
 
     if not notes:
-        notes.append("Matches the required statutory text.")
+        notes.append("Matches the required legal wording exactly.")
 
     return FieldResult(
         field="government_warning", submitted_value=target_text, extracted_value=label_text,
@@ -265,8 +265,8 @@ def build_review_result(
         for f in fields:
             if f.status == FieldStatus.MISSING:
                 f.note = (f.note + " " if f.note else "") + (
-                    "This could mean it's genuinely absent from the label, or that OCR "
-                    "failed to detect that region — please verify visually."
+                    "This might really be missing from the label, or our automatic reader "
+                    "might have just missed it — please take a look yourself."
                 )
 
     warnings = list(extracted.notes)
@@ -275,8 +275,8 @@ def build_review_result(
         warnings.append(consistency_note)
     if extracted.confidence is not None and extracted.confidence < 0.6:
         warnings.append(
-            "Low extraction confidence — image quality may be too poor for automated review "
-            "(blurry, angled, glare, or low resolution)."
+            "The photo quality made this hard to read (blurry, at an angle, glare, or low "
+            "resolution), so the results below may be less reliable — worth a second look."
         )
 
     statuses = {f.status for f in fields}
