@@ -17,6 +17,22 @@ const FIELD_LABELS = {
   net_contents: "Net Contents", government_warning: "Government Warning", country_of_origin: "Country of Origin",
   bottler_name_address: "Bottler / Importer Name & Address",
 };
+const METHOD_LABEL = {
+  ocr: "Read automatically from the photo",
+  vision: "Read using AI image analysis",
+};
+
+function formatSeconds(ms) {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function resultMetaLine(data) {
+  const method = METHOD_LABEL[data.extraction_method] || "Read automatically from the photo";
+  const confidence = data.extraction_confidence != null
+    ? ` · about ${(data.extraction_confidence * 100).toFixed(0)}% sure we read it correctly`
+    : "";
+  return `${method}${confidence} · took ${formatSeconds(data.processing_time_ms)}`;
+}
 
 function showToast(message) {
   const toast = document.getElementById("toast");
@@ -119,7 +135,7 @@ function renderSingleResult(data, clientMs) {
       <span class="icon">${OVERALL_ICON[data.overall_status]}</span>
       <div>
         ${OVERALL_LABEL[data.overall_status]}
-        <span class="meta-line">Extraction: ${data.extraction_method}${data.extraction_confidence != null ? ` · confidence ${(data.extraction_confidence * 100).toFixed(0)}%` : ""} · processed in ${data.processing_time_ms} ms (${clientMs.toFixed(0)} ms round-trip)</span>
+        <span class="meta-line">${resultMetaLine(data)}</span>
       </div>
     </div>
     ${warningsHtml}
@@ -191,7 +207,7 @@ function renderBatchResult(data, clientMs) {
         <td>${escapeHtml(r.filename)}</td>
         <td><span class="status-pill ${r.overall_status === "pass" ? "match" : r.overall_status}">${OVERALL_ICON[r.overall_status]} ${r.overall_status.replace("_", " ")}</span></td>
         <td>${escapeHtml(fieldSummary)}</td>
-        <td>${r.processing_time_ms} ms</td>
+        <td>${formatSeconds(r.processing_time_ms)}</td>
         <td>▾ details</td>
       </tr>
       <tr id="detail-${i}" class="detail-row" hidden>
