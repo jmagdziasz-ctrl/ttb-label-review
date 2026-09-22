@@ -80,12 +80,64 @@ states, click Review. You get a pass/needs-review/fail verdict plus a
 field-by-field table showing the submitted value, the extracted value, and
 why they were judged to match or not.
 
-**Batch Upload** tab: download the manifest CSV template, fill in one row per
-application (the `filename` column must match an uploaded image's filename),
-select all the images, click Review Batch. You get a summary count plus a
-sortable-by-glance table; click any row to expand its field-by-field detail.
+**Batch Upload** tab has two ways in:
 
-## Extraction backends
+- **Quick Batch (no spreadsheet needed):** paste the application details you
+  already have — for as many labels as you want, one blank line between each
+  — and/or upload one text file per application. Select the matching label
+  photos (name each photo to match its application: the first pasted
+  application becomes photo `1`, e.g. `1.jpg`; a file-based application keeps
+  its own file name instead, e.g. `smith_brand.txt` pairs with
+  `smith_brand.jpg`). Click Review Batch — the manifest is built for you
+  internally, never touched by hand. See
+  [Building a batch without a spreadsheet](#building-a-batch-without-a-spreadsheet).
+- **Manifest spreadsheet:** for anyone who already has one. Download the
+  template, fill in one row per application (the `filename` column must
+  match an uploaded image's filename), select all the images, click Review
+  Batch.
+
+Either way you get a summary count plus a sortable-by-glance table; click
+any row to expand its field-by-field detail.
+
+## Building a batch without a spreadsheet
+
+Sarah's agents already have this data — it's sitting in COLA, or in
+whatever notes they copied it from — so making them retype it into a CSV
+with the right column headers just to use this tool would be exactly the
+kind of clerical busywork the discovery notes complain about. The Quick
+Batch flow (`POST /api/review/batch-from-text`,
+[`manifest_builder.py`](backend/app/manifest_builder.py)) skips that step
+entirely.
+
+**Two ways to get application text in, matching how people said they'd
+actually have it:**
+
+- **Paste one big block, applications separated by a blank line.** Each
+  gets a synthetic id — "1", "2", "3" — in the order it appears. Match a
+  photo to it by naming the photo the same number (`1.jpg`, `2.png`, any
+  extension).
+- **Upload one text file per application.** Each keeps its own filename
+  (minus extension) as its id instead of being renumbered, so a same-named
+  photo pairs with it automatically — no renaming step at all if your files
+  are already sensibly named.
+
+Both can be used together in the same batch.
+
+**Parsing works the same two-tier way label images do:** a free, offline,
+line-by-line parser is the default — it looks for lines like `Brand Name:
+...`, tolerating several common phrasings per field (`ABV:`, `Alcohol
+Content:`, and `Alcohol by Volume:` all mean the same thing to it). If
+`ANTHROPIC_API_KEY` is set, a Claude-based parser is used instead, for text
+that isn't consistently labeled — a note dashed off in prose rather than a
+clean field list. Neither backend invents data: a field it can't find is
+left blank, and if a *required* field (brand name, class/type, or net
+contents) is missing, that one application is flagged with a clear reason
+rather than the whole batch failing or a guess being made.
+
+Before running the (potentially slow) image review, the results include a
+"We found N applications — click to double-check" summary so a mis-split
+paste (e.g. missing blank line) is obvious before it wastes a review cycle,
+not after.
 
 Two interchangeable backends implement the same interface
 ([`extraction/base.py`](backend/app/extraction/base.py)):
@@ -430,6 +482,12 @@ title-case violation still fails correctly — see
   query param.
 - `POST /api/review/batch` — batch review. Multipart form: `manifest` (CSV
   file) + `images` (multiple files). Same optional `?method=` param.
+- `POST /api/review/batch-from-text` — the no-spreadsheet batch review.
+  Multipart form: `images` (multiple files) + `text` (pasted applications,
+  optional) and/or `application_files` (multiple text files, optional) — at
+  least one of `text`/`application_files` is required. Optional
+  `?method=ocr|vision` (for reading the label images) and
+  `?parse_method=rules|ai` (for parsing the application text) params.
 
 ## Deployment
 
@@ -462,6 +520,7 @@ backend/
     models.py           Pydantic request/response models
     matching.py          Field comparison / matching engine
     manifest.py          Batch CSV manifest parsing
+    manifest_builder.py   No-spreadsheet batch: text -> ApplicationData
     warning_text.py       Canonical statutory warning text
     extraction/
       base.py             Common extractor interface
@@ -470,6 +529,7 @@ backend/
       factory.py            Picks a backend based on env/request
   tests/
     test_matching.py     Unit tests for the matching engine
+    test_manifest_builder.py  Unit tests for the application-text parser
   requirements.txt
 frontend/
   index.html / style.css / app.js   Plain HTML/JS UI, no build step

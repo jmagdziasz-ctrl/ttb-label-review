@@ -148,7 +148,56 @@ function renderSingleResult(data, clientMs) {
   singleResult.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// ---- Batch review ----
+// ---- Quick Batch: no spreadsheet, paste text and/or upload text files ----
+const quickBatchForm = document.getElementById("quick-batch-form");
+const quickBatchResult = document.getElementById("quick-batch-result");
+const quickBatchSubmit = document.getElementById("quick-batch-submit");
+
+document.getElementById("quick-batch-example-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  const box = document.getElementById("quick-batch-example");
+  box.hidden = !box.hidden;
+});
+
+quickBatchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = document.getElementById("quick-batch-text").value;
+  const appFiles = document.getElementById("quick-batch-files-input").files;
+  const imageFiles = document.getElementById("quick-batch-images-input").files;
+
+  if (!text.trim() && !appFiles.length) {
+    showToast("Paste your applications, upload application files, or both.");
+    return;
+  }
+  if (!imageFiles.length) {
+    showToast("Please select at least one label photo.");
+    return;
+  }
+
+  const formData = new FormData();
+  if (text.trim()) formData.append("text", text);
+  Array.from(appFiles).forEach((f) => formData.append("application_files", f));
+  Array.from(imageFiles).forEach((f) => formData.append("images", f));
+
+  quickBatchSubmit.disabled = true;
+  quickBatchSubmit.innerHTML = '<span class="spinner"></span>Reviewing batch…';
+  quickBatchResult.hidden = true;
+
+  const started = performance.now();
+  try {
+    const res = await fetch("/api/review/batch-from-text", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Request failed");
+    renderBatchResult(data, performance.now() - started, quickBatchResult);
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  } finally {
+    quickBatchSubmit.disabled = false;
+    quickBatchSubmit.textContent = "Review Batch";
+  }
+});
+
+// ---- Batch review (existing manifest CSV) ----
 const batchForm = document.getElementById("batch-form");
 const batchResult = document.getElementById("batch-result");
 const batchSubmit = document.getElementById("batch-submit");
@@ -181,7 +230,7 @@ batchForm.addEventListener("submit", async (e) => {
   }
 });
 
-function renderBatchResult(data, clientMs) {
+function renderBatchResult(data, clientMs, container = batchResult) {
   const s = data.summary;
   const summaryHtml = `
     <div class="summary-row">
@@ -194,23 +243,40 @@ function renderBatchResult(data, clientMs) {
     </div>`;
 
   const unmatchedHtml = data.unmatched_uploaded_images.length
-    ? `<div class="warnings-box"><strong>Uploaded but not in manifest:</strong> ${data.unmatched_uploaded_images.map(escapeHtml).join(", ")}</div>`
+    ? `<div class="warnings-box"><strong>${data.parsed_applications ? "Photos uploaded but no matching application" : "Uploaded but not in manifest"}:</strong> ${data.unmatched_uploaded_images.map(escapeHtml).join(", ")}</div>`
     : "";
 
+  const parsedHtml = data.parsed_applications ? `
+    <details class="parsed-apps-box">
+      <summary>We found ${data.parsed_applications.length} application${data.parsed_applications.length === 1 ? "" : "s"} in what you pasted/uploaded — click to double-check</summary>
+      <table class="parsed-apps-table">
+        <thead><tr><th>Match this to photo</th><th>Brand Name</th><th>Class / Type</th><th></th></tr></thead>
+        <tbody>${data.parsed_applications.map((p) => `
+          <tr>
+            <td><code>${escapeHtml(p.id)}.*</code></td>
+            <td>${p.brand_name ? escapeHtml(p.brand_name) : "—"}</td>
+            <td>${p.class_type ? escapeHtml(p.class_type) : "—"}</td>
+            <td>${p.error ? `<span class="status-pill mismatch">✗ ${escapeHtml(p.error)}</span>` : (p.warnings && p.warnings.length ? `<span class="status-pill needs_review">⚠ ${escapeHtml(p.warnings.join(" "))}</span>` : `<span class="status-pill match">✓ parsed</span>`)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </details>` : "";
+
   const rowsHtml = data.results.map((r, i) => {
+    const detailId = `${container.id}-detail-${i}`;
     if (r.error) {
       return `<tr class="error-row"><td>${escapeHtml(r.filename)}</td><td colspan="4">${escapeHtml(r.error)}</td></tr>`;
     }
     const fieldSummary = r.fields.map((f) => `${FIELD_LABELS[f.field] || f.field}: ${STATUS_ICON[f.status]}`).join("  ");
     return `
-      <tr class="expandable" data-detail="detail-${i}">
+      <tr class="expandable" data-detail="${detailId}">
         <td>${escapeHtml(r.filename)}</td>
         <td><span class="status-pill ${r.overall_status === "pass" ? "match" : r.overall_status}">${OVERALL_ICON[r.overall_status]} ${r.overall_status.replace("_", " ")}</span></td>
         <td>${escapeHtml(fieldSummary)}</td>
         <td>${formatSeconds(r.processing_time_ms)}</td>
         <td>▾ details</td>
       </tr>
-      <tr id="detail-${i}" class="detail-row" hidden>
+      <tr id="${detailId}" class="detail-row" hidden>
         <td colspan="5">
           <table class="field-table">
             <thead><tr><th>Field</th><th>Application Says</th><th>Label Shows</th><th>Result</th></tr></thead>
@@ -221,22 +287,23 @@ function renderBatchResult(data, clientMs) {
       </tr>`;
   }).join("");
 
-  batchResult.innerHTML = `
+  container.innerHTML = `
     ${summaryHtml}
+    ${parsedHtml}
     ${unmatchedHtml}
     <table class="batch-table">
-      <thead><tr><th>Filename</th><th>Overall</th><th>Field Summary</th><th>Time</th><th></th></tr></thead>
+      <thead><tr><th>${data.parsed_applications ? "Application" : "Filename"}</th><th>Overall</th><th>Field Summary</th><th>Time</th><th></th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
-  batchResult.hidden = false;
+  container.hidden = false;
 
-  batchResult.querySelectorAll("tr.expandable").forEach((row) => {
+  container.querySelectorAll("tr.expandable").forEach((row) => {
     row.addEventListener("click", () => {
       const detail = document.getElementById(row.dataset.detail);
       detail.hidden = !detail.hidden;
     });
   });
-  batchResult.scrollIntoView({ behavior: "smooth", block: "start" });
+  container.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function escapeHtml(str) {

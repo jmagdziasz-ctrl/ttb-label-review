@@ -81,8 +81,46 @@
   <!-- ===================== BATCH REVIEW ===================== -->
   <section id="panel-batch" class="panel">
     <div class="card">
-      <h2>Batch Review</h2>
-      <p>For importers dropping off many applications at once. Upload a manifest spreadsheet plus all the label images — each image is matched to its application row by filename.</p>
+      <h2>Quick Batch <span class="optional">— no spreadsheet needed</span></h2>
+      <p>Paste in the application details you already have — for however many labels — and this builds the batch for you. No manifest file to create by hand.</p>
+      <ol class="steps">
+        <li>Paste all your applications into the box below, with a blank line between each one — <a href="#" id="quick-batch-example-link">see an example</a>. (Or, if you have them as separate files, use the file picker instead.)</li>
+        <li>Select all the label photos. Name each photo to match its application — the first application becomes photo <code>1</code> (e.g. <code>1.jpg</code>), the second <code>2</code>, and so on. A file-based application keeps its own file name instead (e.g. <code>smith_brand.txt</code> pairs with <code>smith_brand.jpg</code>).</li>
+        <li>Click Review Batch.</li>
+      </ol>
+      <div id="quick-batch-example" class="example-box" hidden>
+        <pre>Brand Name: OLD TOM DISTILLERY
+Class/Type: Kentucky Straight Bourbon Whiskey
+Alcohol Content: 45% Alc./Vol. (90 Proof)
+Net Contents: 750 mL
+Bottled By: Old Tom Distillery, Bardstown, KY
+
+Brand Name: RIVERBEND DISTILLERS
+Class/Type: Blended Whiskey
+Alcohol Content: 40% Alc./Vol. (80 Proof)
+Net Contents: 750 mL</pre>
+        <p class="note">That's two applications (separated by the blank line) — they'd become photos <code>1.jpg</code> and <code>2.jpg</code>. Any of these lines can be left out if the application doesn't have it; only Brand Name, Class/Type, and Net Contents are needed for a label to be checked at all.</p>
+      </div>
+
+      <form id="quick-batch-form">
+        <label>Paste Your Applications <span class="optional">(leave a blank line between each one)</span>
+          <textarea name="text" id="quick-batch-text" rows="8" placeholder="Brand Name: ...&#10;Class/Type: ...&#10;Alcohol Content: ...&#10;Net Contents: ...&#10;Bottled By: ...&#10;&#10;Brand Name: ...&#10;..."></textarea>
+        </label>
+        <label>Or Upload Application Files <span class="optional">(one text file per application, instead of or in addition to pasting above)</span>
+          <input type="file" id="quick-batch-files-input" accept=".txt" multiple>
+        </label>
+        <label>Label Photos
+          <input type="file" id="quick-batch-images-input" accept="image/*" multiple required>
+        </label>
+        <button type="submit" class="primary-btn" id="quick-batch-submit">Review Batch</button>
+      </form>
+    </div>
+
+    <div id="quick-batch-result" class="result-area" hidden></div>
+
+    <div class="card">
+      <h2>Manifest Spreadsheet <span class="optional">— if you already have one</span></h2>
+      <p>Already have a spreadsheet of applications? Upload it directly instead of pasting text above.</p>
       <ol class="steps">
         <li><a href="/api/manifest-template" download="manifest_template.csv">Download the manifest CSV template</a>, fill in one row per label.</li>
         <li>Select all the label images (the <code>filename</code> column must match each image's file name).</li>

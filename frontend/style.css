@@ -149,6 +149,16 @@ input[type="text"]:focus, select:focus, textarea:focus {
 .steps a { color: var(--accent-dark); font-weight: 600; }
 code { background: #f1ece0; padding: 1px 6px; border-radius: 4px; }
 
+.example-box { background: #fbf8f2; border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 18px; }
+.example-box pre { margin: 0 0 10px; white-space: pre-wrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.88em; background: white; padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+.example-box .note { margin: 0; color: var(--muted); font-size: 0.9em; }
+
+.parsed-apps-box { margin-bottom: 18px; }
+.parsed-apps-box summary { cursor: pointer; font-weight: 600; color: var(--accent-dark); margin-bottom: 8px; }
+.parsed-apps-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 8px; }
+.parsed-apps-table th, .parsed-apps-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.9rem; }
+.parsed-apps-table th { background: #f6f1e7; }
+
 /* ---- Results ---- */
 .result-area { margin-top: 28px; }
 
