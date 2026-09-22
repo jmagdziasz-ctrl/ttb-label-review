@@ -59,6 +59,19 @@ def compare_text_field(field: str, submitted: str | None, extracted: str | None)
             note="This matches — the only difference is things like capital letters, punctuation, or spacing, not the actual wording.",
         )
 
+    # A blurry/low-quality photo can make our reader run words together or
+    # split them oddly (e.g. "OLD TOM DISTILLERY" read as "OLDTOMDISTILLERY")
+    # without actually misreading any letters. That's still purely a spacing
+    # difference in spirit, just one _normalize_loose (which only collapses
+    # repeated whitespace, not missing whitespace) doesn't catch - so check
+    # again with spaces removed entirely before falling back to fuzzy scoring.
+    if loose_a.replace(" ", "") == loose_b.replace(" ", ""):
+        return FieldResult(
+            field=field, submitted_value=submitted, extracted_value=extracted,
+            status=FieldStatus.MATCH_MINOR_DIFF,
+            note="This matches — our reader just ran some words together or split them oddly (common on a blurry photo), not a real wording difference.",
+        )
+
     ratio = _similarity(loose_a, loose_b)
     if ratio >= EXACT_THRESHOLD:
         return FieldResult(

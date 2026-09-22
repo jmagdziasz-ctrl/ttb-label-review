@@ -25,6 +25,14 @@ def test_case_difference_is_minor_not_mismatch():
     assert r.status == FieldStatus.MATCH_MINOR_DIFF
 
 
+def test_missing_spaces_is_minor_not_needs_review():
+    # A blurry photo can make the reader run words together (confirmed
+    # against sample_labels/blurry_label.png) without misreading any
+    # letters - that's cosmetic, not a real difference.
+    r = compare_text_field("brand_name", "OLD TOM DISTILLERY", "OLDTOMDISTILLERY")
+    assert r.status == FieldStatus.MATCH_MINOR_DIFF
+
+
 def test_genuine_brand_mismatch():
     r = compare_text_field("brand_name", "OLD TOM DISTILLERY", "NEW TOM DISTILLERY COMPANY XYZ")
     assert r.status == FieldStatus.MISMATCH

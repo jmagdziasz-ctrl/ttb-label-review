@@ -47,10 +47,10 @@ Respond with ONLY a single JSON object with exactly these keys, no other text, n
 class VisionExtractor(LabelExtractor):
     method_name = "vision"
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None):
         if anthropic is None:
             raise RuntimeError("anthropic package not installed. Run: pip install anthropic")
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set.")
         self._client = anthropic.Anthropic(api_key=api_key)
@@ -59,22 +59,45 @@ class VisionExtractor(LabelExtractor):
         media_type = _guess_media_type(image_bytes)
         b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
-        response = self._client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": media_type, "data": b64},
-                        },
-                        {"type": "text", "text": EXTRACTION_PROMPT},
-                    ],
-                }
-            ],
-        )
+        try:
+            response = self._client.messages.create(
+                model=MODEL,
+                max_tokens=1024,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {"type": "base64", "media_type": media_type, "data": b64},
+                            },
+                            {"type": "text", "text": EXTRACTION_PROMPT},
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:
+            # Checked by status code rather than a specific SDK exception
+            # class so this doesn't break across anthropic SDK versions.
+            status = getattr(exc, "status_code", None)
+            body = getattr(exc, "body", None)
+            api_message = body.get("error", {}).get("message") if isinstance(body, dict) else None
+            if status == 401:
+                # Confirmed directly against the real API: Anthropic returns
+                # this same generic "API key is invalid" for every 401 cause
+                # (typo, truncated copy-paste, revoked/rotated key) - it is
+                # NEVER a billing issue, so the message must not suggest
+                # checking billing, that just sends people down the wrong path.
+                raise RuntimeError(
+                    f"Anthropic rejected this API key ({api_message or 'API key is invalid.'}) "
+                    "This means the key value itself wasn't recognized - not a billing issue. "
+                    "Double-check the full key was copied with no characters missing or extra "
+                    "whitespace, and that it hasn't been deleted or rotated since you copied it "
+                    "(check the Anthropic Console's API Keys list)."
+                ) from exc
+            if status is not None and api_message:
+                raise RuntimeError(f"Anthropic rejected this request ({status}): {api_message}") from exc
+            raise
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         text = _strip_code_fence(text)
 

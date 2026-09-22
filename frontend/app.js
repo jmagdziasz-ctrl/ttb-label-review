@@ -22,6 +22,78 @@ const METHOD_LABEL = {
   vision: "Read using AI image analysis",
 };
 
+// ---- Optional: reading with the user's own Anthropic API key ----
+// Stored only in this browser tab, only for the current session (cleared
+// automatically when the tab closes - sessionStorage rather than
+// localStorage, so the key doesn't sit around indefinitely on a shared or
+// public computer), never sent anywhere but this app's own backend, and
+// only attached as a header on review requests.
+const API_KEY_STORAGE_KEY = "ttb_anthropic_api_key";
+
+function getStoredApiKey() {
+  try {
+    return sessionStorage.getItem(API_KEY_STORAGE_KEY) || "";
+  } catch {
+    return ""; // private-browsing / storage blocked - just fall back to the free reader
+  }
+}
+
+function setStoredApiKey(key) {
+  try {
+    if (key) sessionStorage.setItem(API_KEY_STORAGE_KEY, key);
+    else sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+  } catch {
+    // storage unavailable - nothing to do, the key just won't persist
+  }
+}
+
+function apiKeyHeaders() {
+  const key = getStoredApiKey();
+  return key ? { "X-Anthropic-Api-Key": key } : {};
+}
+
+function refreshApiKeyStatus() {
+  const hasKey = !!getStoredApiKey();
+  document.getElementById("api-key-status").textContent = hasKey
+    ? "Currently using: your API key (AI image reading)."
+    : "Currently using: the free built-in reader.";
+  const chip = document.getElementById("api-key-status-chip");
+  chip.textContent = hasKey ? "Using your API key" : "Free reader";
+  chip.classList.toggle("active", hasKey);
+}
+
+const apiKeyToggle = document.getElementById("api-key-toggle");
+const apiKeyPanel = document.getElementById("api-key-panel");
+const apiKeyInput = document.getElementById("api-key-input");
+apiKeyInput.value = getStoredApiKey();
+
+apiKeyToggle.addEventListener("click", () => { apiKeyPanel.hidden = !apiKeyPanel.hidden; });
+
+document.getElementById("api-key-save").addEventListener("click", () => {
+  const key = apiKeyInput.value.trim();
+  if (!key) { showToast("Enter a key first, or use Remove Key to go back to the free reader."); return; }
+  setStoredApiKey(key);
+  refreshApiKeyStatus();
+  // A cheap, non-blocking sanity check: every real Anthropic key starts
+  // with this prefix, so a mismatch almost always means something else got
+  // pasted in (wrong field, browser autofill, a truncated copy) - still
+  // saved either way in case the format ever changes, just flagged.
+  if (!key.startsWith("sk-ant-")) {
+    showToast("Saved for this session, but that doesn't look like a typical Anthropic key (usually starts with \"sk-ant-\") — double-check what you pasted.");
+  } else {
+    showToast("API key saved for this session — reviews will use it until you close the browser or click Remove Key.");
+  }
+});
+
+document.getElementById("api-key-remove").addEventListener("click", () => {
+  apiKeyInput.value = "";
+  setStoredApiKey("");
+  refreshApiKeyStatus();
+  showToast("API key removed — back to the free reader.");
+});
+
+refreshApiKeyStatus();
+
 function formatSeconds(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -32,6 +104,46 @@ function resultMetaLine(data) {
     ? ` · about ${(data.extraction_confidence * 100).toFixed(0)}% sure we read it correctly`
     : "";
   return `${method}${confidence} · took ${formatSeconds(data.processing_time_ms)}`;
+}
+
+function resultActionsHtml() {
+  return `
+    <div class="result-actions">
+      <button type="button" class="secondary-btn" data-action="print">Print</button>
+      <button type="button" class="secondary-btn" data-action="save-pdf">Save as PDF</button>
+    </div>`;
+}
+
+function printWithDetailsExpanded(container) {
+  // Batch rows are collapsed by default so the table stays scannable, but a
+  // printed/saved copy should show everything — nothing usefully "expandable"
+  // on paper. Expand for the print pass, then restore on-screen state after
+  // (via `afterprint`, which fires once the print dialog actually closes,
+  // rather than a fixed timeout that could fire too early or leave things
+  // expanded too long).
+  const collapsedRows = Array.from(container.querySelectorAll(".detail-row[hidden]"));
+  collapsedRows.forEach((row) => { row.hidden = false; });
+  const restore = () => collapsedRows.forEach((row) => { row.hidden = true; });
+  window.addEventListener("afterprint", restore, { once: true });
+  window.print();
+  // Safety net: some browsers (or a cancelled/blocked dialog) may never
+  // fire `afterprint` — don't leave the table stuck expanded indefinitely.
+  setTimeout(restore, 5000);
+}
+
+function wireResultActions(container, filenameSlug) {
+  const printBtn = container.querySelector('[data-action="print"]');
+  const pdfBtn = container.querySelector('[data-action="save-pdf"]');
+  if (printBtn) printBtn.addEventListener("click", () => printWithDetailsExpanded(container));
+  if (pdfBtn) pdfBtn.addEventListener("click", () => {
+    // Chrome/Edge suggest the document title as the default filename when
+    // "Save as PDF" is picked as the print destination, so we swap it in
+    // briefly rather than adding a PDF-generation library for this.
+    const originalTitle = document.title;
+    document.title = `${filenameSlug}-${new Date().toISOString().slice(0, 10)}`;
+    printWithDetailsExpanded(container);
+    setTimeout(() => { document.title = originalTitle; }, 1000);
+  });
 }
 
 function showToast(message) {
@@ -86,6 +198,15 @@ const singleForm = document.getElementById("single-form");
 const singleResult = document.getElementById("single-result");
 const singleSubmit = document.getElementById("single-submit");
 
+document.getElementById("single-clear").addEventListener("click", () => {
+  singleForm.reset();
+  imagePreview.hidden = true;
+  imagePreview.removeAttribute("src");
+  dropzoneText.textContent = "Click to choose a photo, or drag one here";
+  singleResult.hidden = true;
+  singleResult.innerHTML = "";
+});
+
 singleForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!imageInput.files[0]) { showToast("Please choose a label image first."); return; }
@@ -99,7 +220,7 @@ singleForm.addEventListener("submit", async (e) => {
 
   const started = performance.now();
   try {
-    const res = await fetch("/api/review", { method: "POST", body: formData });
+    const res = await fetch("/api/review", { method: "POST", body: formData, headers: apiKeyHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Request failed");
     renderSingleResult(data, performance.now() - started);
@@ -131,6 +252,7 @@ function renderSingleResult(data, clientMs) {
     : "";
 
   singleResult.innerHTML = `
+    ${resultActionsHtml()}
     <div class="overall-banner ${data.overall_status}">
       <span class="icon">${OVERALL_ICON[data.overall_status]}</span>
       <div>
@@ -145,62 +267,20 @@ function renderSingleResult(data, clientMs) {
     </table>
   `;
   singleResult.hidden = false;
+  wireResultActions(singleResult, "ttb-label-review");
   singleResult.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// ---- Quick Batch: no spreadsheet, paste text and/or upload text files ----
-const quickBatchForm = document.getElementById("quick-batch-form");
-const quickBatchResult = document.getElementById("quick-batch-result");
-const quickBatchSubmit = document.getElementById("quick-batch-submit");
-
-document.getElementById("quick-batch-example-link").addEventListener("click", (e) => {
-  e.preventDefault();
-  const box = document.getElementById("quick-batch-example");
-  box.hidden = !box.hidden;
-});
-
-quickBatchForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = document.getElementById("quick-batch-text").value;
-  const appFiles = document.getElementById("quick-batch-files-input").files;
-  const imageFiles = document.getElementById("quick-batch-images-input").files;
-
-  if (!text.trim() && !appFiles.length) {
-    showToast("Paste your applications, upload application files, or both.");
-    return;
-  }
-  if (!imageFiles.length) {
-    showToast("Please select at least one label photo.");
-    return;
-  }
-
-  const formData = new FormData();
-  if (text.trim()) formData.append("text", text);
-  Array.from(appFiles).forEach((f) => formData.append("application_files", f));
-  Array.from(imageFiles).forEach((f) => formData.append("images", f));
-
-  quickBatchSubmit.disabled = true;
-  quickBatchSubmit.innerHTML = '<span class="spinner"></span>Reviewing batch…';
-  quickBatchResult.hidden = true;
-
-  const started = performance.now();
-  try {
-    const res = await fetch("/api/review/batch-from-text", { method: "POST", body: formData });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Request failed");
-    renderBatchResult(data, performance.now() - started, quickBatchResult);
-  } catch (err) {
-    showToast(`Error: ${err.message}`);
-  } finally {
-    quickBatchSubmit.disabled = false;
-    quickBatchSubmit.textContent = "Review Batch";
-  }
-});
-
-// ---- Batch review (existing manifest CSV) ----
+// ---- Batch review (manifest CSV) ----
 const batchForm = document.getElementById("batch-form");
 const batchResult = document.getElementById("batch-result");
 const batchSubmit = document.getElementById("batch-submit");
+
+document.getElementById("batch-clear").addEventListener("click", () => {
+  batchForm.reset();
+  batchResult.hidden = true;
+  batchResult.innerHTML = "";
+});
 
 batchForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -218,7 +298,7 @@ batchForm.addEventListener("submit", async (e) => {
 
   const started = performance.now();
   try {
-    const res = await fetch("/api/review/batch", { method: "POST", body: formData });
+    const res = await fetch("/api/review/batch", { method: "POST", body: formData, headers: apiKeyHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Request failed");
     renderBatchResult(data, performance.now() - started);
@@ -243,24 +323,8 @@ function renderBatchResult(data, clientMs, container = batchResult) {
     </div>`;
 
   const unmatchedHtml = data.unmatched_uploaded_images.length
-    ? `<div class="warnings-box"><strong>${data.parsed_applications ? "Photos uploaded but no matching application" : "Uploaded but not in manifest"}:</strong> ${data.unmatched_uploaded_images.map(escapeHtml).join(", ")}</div>`
+    ? `<div class="warnings-box"><strong>Uploaded but not in manifest:</strong> ${data.unmatched_uploaded_images.map(escapeHtml).join(", ")}</div>`
     : "";
-
-  const parsedHtml = data.parsed_applications ? `
-    <details class="parsed-apps-box">
-      <summary>We found ${data.parsed_applications.length} application${data.parsed_applications.length === 1 ? "" : "s"} in what you pasted/uploaded — click to double-check</summary>
-      <table class="parsed-apps-table">
-        <thead><tr><th>Match this to photo</th><th>Brand Name</th><th>Class / Type</th><th></th></tr></thead>
-        <tbody>${data.parsed_applications.map((p) => `
-          <tr>
-            <td><code>${escapeHtml(p.id)}.*</code></td>
-            <td>${p.brand_name ? escapeHtml(p.brand_name) : "—"}</td>
-            <td>${p.class_type ? escapeHtml(p.class_type) : "—"}</td>
-            <td>${p.error ? `<span class="status-pill mismatch">✗ ${escapeHtml(p.error)}</span>` : (p.warnings && p.warnings.length ? `<span class="status-pill needs_review">⚠ ${escapeHtml(p.warnings.join(" "))}</span>` : `<span class="status-pill match">✓ parsed</span>`)}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </details>` : "";
 
   const rowsHtml = data.results.map((r, i) => {
     const detailId = `${container.id}-detail-${i}`;
@@ -288,11 +352,11 @@ function renderBatchResult(data, clientMs, container = batchResult) {
   }).join("");
 
   container.innerHTML = `
+    ${resultActionsHtml()}
     ${summaryHtml}
-    ${parsedHtml}
     ${unmatchedHtml}
     <table class="batch-table">
-      <thead><tr><th>${data.parsed_applications ? "Application" : "Filename"}</th><th>Overall</th><th>Field Summary</th><th>Time</th><th></th></tr></thead>
+      <thead><tr><th>Filename</th><th>Overall</th><th>Field Summary</th><th>Time</th><th></th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
   container.hidden = false;
@@ -303,6 +367,7 @@ function renderBatchResult(data, clientMs, container = batchResult) {
       detail.hidden = !detail.hidden;
     });
   });
+  wireResultActions(container, "ttb-batch-review");
   container.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 

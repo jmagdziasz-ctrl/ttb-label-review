@@ -17,6 +17,35 @@
   <button class="tab" data-tab="batch" role="tab" aria-selected="false">Batch Upload</button>
 </nav>
 
+<div class="api-key-bar">
+  <button type="button" id="api-key-toggle" class="link-btn">⚙ Reading settings <span id="api-key-status-chip" class="status-chip">Free reader</span></button>
+  <div id="api-key-panel" class="api-key-panel" hidden>
+    <p>By default, labels are read for free using a built-in, offline reader — no account or setup needed. If you have an
+      <a href="https://console.anthropic.com" target="_blank" rel="noopener">Anthropic API key</a>, you can enter it below
+      to use Claude's AI image reading instead, which is more accurate on blurry, angled, or low-quality photos. This costs
+      a small amount per label reviewed on your own Anthropic account.</p>
+    <label>Anthropic API Key <span class="optional">(optional — leave blank to keep using the free reader)</span>
+      <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <div class="form-actions">
+      <button type="button" class="secondary-btn" id="api-key-save">Use for This Session</button>
+      <button type="button" class="secondary-btn" id="api-key-remove">Remove Key</button>
+    </div>
+    <p class="note" id="api-key-status">Currently using: the free built-in reader.</p>
+    <p class="note"><strong>This key is not saved permanently</strong> — it's kept only for as long as this browser tab stays open, and is cleared automatically when you close it (so it won't sit around on a shared or public computer). You'll need to re-enter it each new browser session.</p>
+    <details class="example-box">
+      <summary>Don't have a key? Here's how to get one</summary>
+      <ol class="steps">
+        <li>Go to <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> and sign up or log in.</li>
+        <li>Go to <strong>Settings → API Keys</strong>, click <strong>Create Key</strong>, and copy it (it's only shown once).</li>
+        <li>Add a payment method under <strong>Settings → Billing</strong> — usage is billed per request, typically a few cents per label reviewed.</li>
+        <li>Paste the key above and click "Use for This Session".</li>
+      </ol>
+      <p class="note">It's sent with each review request straight to this app's own server, which uses it to call Claude on your behalf; it's never sent anywhere else, and you can remove it early at any time.</p>
+    </details>
+  </div>
+</div>
+
 <main>
   <!-- ===================== SINGLE REVIEW ===================== -->
   <section id="panel-single" class="panel active">
@@ -72,7 +101,10 @@
         </div>
       </div>
 
-      <button type="submit" class="primary-btn" id="single-submit">Review Label</button>
+      <div class="form-actions">
+        <button type="submit" class="primary-btn" id="single-submit">Review Label</button>
+        <button type="button" class="secondary-btn" id="single-clear">Clear</button>
+      </div>
     </form>
 
     <div id="single-result" class="result-area" hidden></div>
@@ -81,46 +113,8 @@
   <!-- ===================== BATCH REVIEW ===================== -->
   <section id="panel-batch" class="panel">
     <div class="card">
-      <h2>Quick Batch <span class="optional">— no spreadsheet needed</span></h2>
-      <p>Paste in the application details you already have — for however many labels — and this builds the batch for you. No manifest file to create by hand.</p>
-      <ol class="steps">
-        <li>Paste all your applications into the box below, with a blank line between each one — <a href="#" id="quick-batch-example-link">see an example</a>. (Or, if you have them as separate files, use the file picker instead.)</li>
-        <li>Select all the label photos. Name each photo to match its application — the first application becomes photo <code>1</code> (e.g. <code>1.jpg</code>), the second <code>2</code>, and so on. A file-based application keeps its own file name instead (e.g. <code>smith_brand.txt</code> pairs with <code>smith_brand.jpg</code>).</li>
-        <li>Click Review Batch.</li>
-      </ol>
-      <div id="quick-batch-example" class="example-box" hidden>
-        <pre>Brand Name: OLD TOM DISTILLERY
-Class/Type: Kentucky Straight Bourbon Whiskey
-Alcohol Content: 45% Alc./Vol. (90 Proof)
-Net Contents: 750 mL
-Bottled By: Old Tom Distillery, Bardstown, KY
-
-Brand Name: RIVERBEND DISTILLERS
-Class/Type: Blended Whiskey
-Alcohol Content: 40% Alc./Vol. (80 Proof)
-Net Contents: 750 mL</pre>
-        <p class="note">That's two applications (separated by the blank line) — they'd become photos <code>1.jpg</code> and <code>2.jpg</code>. Any of these lines can be left out if the application doesn't have it; only Brand Name, Class/Type, and Net Contents are needed for a label to be checked at all.</p>
-      </div>
-
-      <form id="quick-batch-form">
-        <label>Paste Your Applications <span class="optional">(leave a blank line between each one)</span>
-          <textarea name="text" id="quick-batch-text" rows="8" placeholder="Brand Name: ...&#10;Class/Type: ...&#10;Alcohol Content: ...&#10;Net Contents: ...&#10;Bottled By: ...&#10;&#10;Brand Name: ...&#10;..."></textarea>
-        </label>
-        <label>Or Upload Application Files <span class="optional">(one text file per application, instead of or in addition to pasting above)</span>
-          <input type="file" id="quick-batch-files-input" accept=".txt" multiple>
-        </label>
-        <label>Label Photos
-          <input type="file" id="quick-batch-images-input" accept="image/*" multiple required>
-        </label>
-        <button type="submit" class="primary-btn" id="quick-batch-submit">Review Batch</button>
-      </form>
-    </div>
-
-    <div id="quick-batch-result" class="result-area" hidden></div>
-
-    <div class="card">
-      <h2>Manifest Spreadsheet <span class="optional">— if you already have one</span></h2>
-      <p>Already have a spreadsheet of applications? Upload it directly instead of pasting text above.</p>
+      <h2>Manifest Spreadsheet</h2>
+      <p>Upload a spreadsheet of applications along with the label photos to review them all at once.</p>
       <ol class="steps">
         <li><a href="/api/manifest-template" download="manifest_template.csv">Download the manifest CSV template</a>, fill in one row per label.</li>
         <li>Select all the label images (the <code>filename</code> column must match each image's file name).</li>
@@ -134,7 +128,10 @@ Net Contents: 750 mL</pre>
         <label>Label Images <span class="optional">(select multiple)</span>
           <input type="file" id="images-input" accept="image/*" multiple required>
         </label>
-        <button type="submit" class="primary-btn" id="batch-submit">Review Batch</button>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn" id="batch-submit">Review Batch</button>
+          <button type="button" class="secondary-btn" id="batch-clear">Clear</button>
+        </div>
       </form>
     </div>
 
