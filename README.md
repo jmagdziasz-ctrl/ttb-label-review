@@ -9,6 +9,10 @@ Built in response to the discovery interviews with TTB's Label Compliance
 Division. The design choices below trace directly back to specific quotes
 from those interviews (cited inline).
 
+**Live demo: [ttb-label-review-98gy.onrender.com](https://ttb-label-review-98gy.onrender.com)**
+— runs on Render's free tier, which spins down after 15 minutes idle; the
+first request after that can take 30-60s to wake back up.
+
 ## Approach, tools, and assumptions
 
 **Approach:** two-tier label extraction — a free, fully offline OCR reader
@@ -525,6 +529,16 @@ needing `ANTHROPIC_API_KEY` set on the server (see
 
 The app is a single FastAPI process serving both the API and the static
 frontend — no separate frontend build/deploy step.
+
+**A real, deployment-specific finding worth recording:** the live demo runs
+noticeably slower on OCR than the ~1.8-3.5s/label measured locally (see
+[Performance tuning](#performance-tuning-hitting-the-5-second-target)) — a
+single-threaded ONNX inference call that costs ~2-3s on a real dev machine
+measured ~11s on Render's free tier, which allocates only 0.1 CPU. That's
+a genuine hosting-tier constraint, not a regression in the code itself
+(confirmed identical behavior locally on the same commit), but it's worth
+knowing if you're timing the deployed demo against Sarah's 5-second bar —
+a paid tier with a real CPU allocation would close most of that gap.
 
 **Render / Railway / Fly.io (Python buildpack):**
 - Root/start directory: `backend`
