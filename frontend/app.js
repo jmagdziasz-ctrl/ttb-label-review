@@ -136,6 +136,10 @@ document.getElementById("api-key-save").addEventListener("click", () => {
   const key = apiKeyInput.value.trim();
   if (!key) { showToast("Enter a key first, or use Remove Key to go back to this app's default reader."); return; }
   setStoredApiKey(key);
+  // Saving a key is a clear signal they want AI reading - if the free
+  // reader was forced, leaving that on would silently make the key they
+  // just saved do nothing until they separately noticed and toggled it off.
+  setForceFreeReader(false);
   refreshApiKeyStatus();
   // A cheap, non-blocking sanity check: every real Anthropic key starts
   // with this prefix, so a mismatch almost always means something else got
@@ -152,7 +156,11 @@ document.getElementById("api-key-remove").addEventListener("click", () => {
   apiKeyInput.value = "";
   setStoredApiKey("");
   refreshApiKeyStatus();
-  showToast(serverDefaultMethod === "vision" ? "API key removed — back to this deployment's default AI reading." : "API key removed — back to the free reader.");
+  if (getForceFreeReader()) {
+    showToast("API key removed. (The free reader is still forced — click \"Switch Back to AI Reading\" above to change that too.)");
+  } else {
+    showToast(serverDefaultMethod === "vision" ? "API key removed — back to this deployment's default AI reading." : "API key removed — back to the free reader.");
+  }
 });
 
 refreshApiKeyStatus();
