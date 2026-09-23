@@ -86,7 +86,11 @@ tied back to specific discovery-interview feedback.
 
 ## Quickstart
 
-Requires Python 3.10+.
+Requires Python 3.10+. **3.12 is recommended** and pinned via `.python-version`
+for anyone deploying this — very recent Python releases (3.14, for example)
+don't yet have full wheel coverage for every dependency here on every
+platform; this bit a real deploy attempt (see
+[Deployment](#deployment)) before being pinned.
 
 ```bash
 cd backend
@@ -125,6 +129,8 @@ filename), select all the label images, click Review Batch. You get a
 summary count plus a sortable-by-glance table; click any row to expand its
 field-by-field detail.
 
+### Extraction backends
+
 Two interchangeable backends implement the same interface
 ([`extraction/base.py`](backend/app/extraction/base.py)):
 
@@ -149,37 +155,45 @@ would likely never survive contact with TTB's actual network. The free path
 had to be the one that works out of the box, with no account, key, or setup
 required.
 
-### Using your own Anthropic API key (optional)
+### Switching reading methods in the app
 
-Nobody has to set anything up to use this tool — the free OCR reader is the
-default and needs no account or key. But if you have your own Anthropic API
-key, you can enter it in the app itself (click **⚙ Reading settings** near
-the top of either tab) to switch that browser over to Claude's Vision
-reading, which handles blurry/angled/low-quality photos meaningfully better
-than OCR (see [Handling imperfect photos](#handling-imperfect-photos-angle-lighting-glare)
-and the government-warning line-detection limitation discussed above).
+Click **⚙ Reading settings** near the top of either tab to see which
+reader is currently active and switch it:
 
-**Don't have a key?**
-1. Go to [console.anthropic.com](https://console.anthropic.com) and sign up or log in.
-2. Go to **Settings → API Keys**, click **Create Key**, and copy it (it's only shown once).
-3. Add a payment method under **Settings → Billing** — usage is billed per
-   request, typically a few cents per label reviewed.
-4. Paste the key into the app's Reading settings panel and click Save Key.
+- **Switch to the Free Reader** — a one-click override that forces every
+  review to use the free OCR reader for the rest of the browser session,
+  regardless of any key (yours or the server's). Useful for comparing both
+  extraction methods side by side, and doubles as a self-serve fallback if
+  Vision ever has an issue (an exhausted key, a rate limit, a transient API
+  outage) — an evaluator isn't stuck looking at an error, they can just
+  switch. This sends `?method=ocr` on that request (see
+  [API reference](#api-reference)); nothing else changes.
+- **Advanced: use your own Anthropic API key** (collapsed by default) —
+  paste your own key to use Vision under your own account instead of
+  whatever this app is currently defaulting to. Don't have one?
+  1. Go to [console.anthropic.com](https://console.anthropic.com) and sign up or log in.
+  2. Go to **Settings → API Keys**, click **Create Key**, and copy it (it's only shown once).
+  3. Add a payment method under **Settings → Billing** — usage is billed per
+     request, typically a few cents per label reviewed.
+  4. Paste the key in and click "Use for This Session."
 
-Your key is kept only in that browser tab's session storage — cleared
-automatically when the tab closes, so it doesn't linger on a shared or
-public computer. It's sent with each review request as an
-`X-Anthropic-Api-Key` header straight to this app's own backend, which uses
-it to call Claude on your behalf for that
-request only (it's never cached, logged, or reused for anyone else's
-request — see `get_extractor()` in
-[`extraction/factory.py`](backend/app/extraction/factory.py)). Click Remove
-Key at any time to go back to the free reader.
+  Your key is kept only in that browser tab's session storage — cleared
+  automatically when the tab closes, so it doesn't linger on a shared or
+  public computer. It's sent with each review request as an
+  `X-Anthropic-Api-Key` header straight to this app's own backend, which
+  uses it to call Claude on your behalf for that request only (it's never
+  cached, logged, or reused for anyone else's request — see
+  `get_extractor()` in [`extraction/factory.py`](backend/app/extraction/factory.py)).
 
-This is separate from — and takes priority over — setting
-`ANTHROPIC_API_KEY` as a server-side environment variable (still useful for
-an operator who wants Vision to be the default for every user of a
-deployment, without each person entering their own key).
+**What's active by default** depends on how this instance is run: locally
+with no configuration, that's the free OCR reader (see
+[Quickstart](#quickstart)); the publicly deployed demo linked above has
+`ANTHROPIC_API_KEY` configured server-side, so Vision is the default there
+with no setup needed from a visitor — the status line always shows which
+one is actually in effect, since it checks the live `/api/health` response
+rather than assuming. A server-side key is a platform-managed secret on the
+host, never in source control (see [Deployment](#deployment)), and always
+loses to a visitor's own key or the free-reader override if either is set.
 
 ## Performance tuning: hitting the 5-second target
 
@@ -505,7 +519,7 @@ title-case violation still fails correctly — see
 Both review endpoints also accept an optional `X-Anthropic-Api-Key` header
 — a caller-supplied key that switches that single request to Vision without
 needing `ANTHROPIC_API_KEY` set on the server (see
-[Using your own Anthropic API key](#using-your-own-anthropic-api-key-optional)).
+[Switching reading methods in the app](#switching-reading-methods-in-the-app)).
 
 ## Deployment
 
@@ -540,9 +554,17 @@ docker build -t ttb-label-review .
 docker run -p 8000:8000 ttb-label-review
 ```
 
-Note the OCR path downloads its ONNX model files on first use and caches
-them; the first request after a fresh deploy will be slower than subsequent
-ones.
+The OCR path's ONNX model files ship bundled inside the
+`rapidocr-onnxruntime` pip package itself — nothing is downloaded at
+runtime, so there's genuinely zero network dependency for the free reader,
+not just a one-time download (worth calling out explicitly, since this is a
+stronger version of the offline guarantee than it might first appear — see
+[Why it's built this way](#why-its-built-this-way)). Loading them into an
+ONNX Runtime session takes ~3.4s the first time it happens (measured
+locally), which is done eagerly at server startup rather than on the first
+request — see `lifespan()` in [`main.py`](backend/app/main.py) — so that
+cost lands during deploy, invisible to the first real visitor, not during
+whatever they're timing.
 
 ## Project structure
 

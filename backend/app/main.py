@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
@@ -15,7 +16,27 @@ from .manifest import CSV_TEMPLATE, ManifestError, parse_manifest
 from .matching import build_review_result
 from .models import ApplicationData, BeverageType
 
-app = FastAPI(title="TTB Label Compliance Review (Prototype)")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Loading the OCR engine (building its ONNX Runtime sessions) costs
+    # ~3.4s the first time it happens, measured locally - lazy-loading it on
+    # the first real request would land that cost right when it's most
+    # visible: either the very review a deployment's first visitor times
+    # against Sarah's 5-second bar, or the exact moment someone clicks
+    # "Switch to the Free Reader" expecting an instant, reliable fallback.
+    # Eager-loading here moves that cost to deploy time instead, where
+    # nobody's watching the clock. Always loaded regardless of which method
+    # is the current default, since OCR needs to be ready as a fallback
+    # either way (see the free-reader toggle in the frontend).
+    try:
+        get_extractor("ocr")
+    except OcrUnavailableError:
+        pass  # genuinely unavailable in this environment - Vision may still work
+    yield
+
+
+app = FastAPI(title="TTB Label Compliance Review (Prototype)", lifespan=lifespan)
 
 # The frontend is always served by this same process (see the StaticFiles
 # mount below), so normal use of the app never involves a cross-origin
