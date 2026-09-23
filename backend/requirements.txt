@@ -4,7 +4,7 @@ python-multipart>=0.0.9
 pydantic>=2.7
 Pillow>=10.0
 numpy>=1.26
-rapidocr-onnxruntime>=1.2
+rapidocr-onnxruntime==1.2.3
 
 # Powers the Claude Vision extractor - only actually used if ANTHROPIC_API_KEY
 # is set server-side, or a caller supplies their own key (see the "Reading

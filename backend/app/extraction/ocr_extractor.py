@@ -110,22 +110,37 @@ def _patch_onnx_single_threaded() -> None:
     the full before/after numbers). RapidOCR doesn't expose a thread-count
     kwarg, so this patches the SessionOptions class it uses before it builds
     its inference sessions.
+
+    This is a pure performance optimization, not a correctness requirement -
+    OCR works fine (just slower) without it. `rapidocr_onnxruntime.utils`
+    re-exports `SessionOptions` directly from the installed `onnxruntime`
+    package, so this depends on internals of both packages that aren't a
+    guaranteed public contract; confirmed directly (a deployment that worked
+    fine on Windows/Python 3.14 locally hit an AttributeError here on
+    Linux/Python 3.12) that this can vary by platform/package-version
+    combination in ways this patch can't anticipate. Never let a speed
+    optimization take down the core feature it's optimizing - skip it and
+    fall back to default (multi-threaded) execution if it doesn't apply
+    cleanly, rather than raising.
     """
-    from rapidocr_onnxruntime import utils as rapidocr_utils
+    try:
+        from rapidocr_onnxruntime import utils as rapidocr_utils
 
-    Original = rapidocr_utils.SessionOptions
-    if getattr(Original, "_ttb_single_threaded", False):
-        return  # already patched (e.g. a second extractor instance)
+        Original = rapidocr_utils.SessionOptions
+        if getattr(Original, "_ttb_single_threaded", False):
+            return  # already patched (e.g. a second extractor instance)
 
-    class SingleThreadedSessionOptions(Original):
-        _ttb_single_threaded = True
+        class SingleThreadedSessionOptions(Original):
+            _ttb_single_threaded = True
 
-        def __init__(self):
-            super().__init__()
-            self.intra_op_num_threads = 1
-            self.inter_op_num_threads = 1
+            def __init__(self):
+                super().__init__()
+                self.intra_op_num_threads = 1
+                self.inter_op_num_threads = 1
 
-    rapidocr_utils.SessionOptions = SingleThreadedSessionOptions
+        rapidocr_utils.SessionOptions = SingleThreadedSessionOptions
+    except Exception:
+        pass
 
 
 def _get_engine():
