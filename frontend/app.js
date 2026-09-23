@@ -52,6 +52,35 @@ function apiKeyHeaders() {
   return key ? { "X-Anthropic-Api-Key": key } : {};
 }
 
+// A one-click override to force the free reader for every review this
+// session - lets anyone compare both extraction paths without needing an
+// API key of their own, and doubles as a fallback if AI reading ever has
+// an issue (rate limit, an expired/exhausted key, a transient API outage).
+// Session-scoped for the same reason the API key is: no reason for a forced
+// setting to silently outlive the tab.
+const FORCE_FREE_STORAGE_KEY = "ttb_force_free_reader";
+
+function getForceFreeReader() {
+  try {
+    return sessionStorage.getItem(FORCE_FREE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setForceFreeReader(value) {
+  try {
+    if (value) sessionStorage.setItem(FORCE_FREE_STORAGE_KEY, "1");
+    else sessionStorage.removeItem(FORCE_FREE_STORAGE_KEY);
+  } catch {
+    // storage unavailable - the toggle just won't persist, reviews still work
+  }
+}
+
+function methodQueryParam() {
+  return getForceFreeReader() ? "?method=ocr" : "";
+}
+
 // Whether *this server* already defaults to Vision (an ANTHROPIC_API_KEY is
 // configured on the deployment itself, e.g. for a demo) - separate from
 // whether the visitor has entered their own key. Without this, the status
@@ -64,10 +93,14 @@ fetch("/api/health")
   .catch(() => {}); // health check failing isn't worth surfacing here - just keep the client-only view
 
 function refreshApiKeyStatus() {
+  const forcedFree = getForceFreeReader();
   const hasOwnKey = !!getStoredApiKey();
   const chip = document.getElementById("api-key-status-chip");
   const status = document.getElementById("api-key-status");
-  if (hasOwnKey) {
+  if (forcedFree) {
+    status.textContent = "Currently using: the free built-in reader (forced — click below to use AI reading again).";
+    chip.textContent = "Free reader (forced)";
+  } else if (hasOwnKey) {
     status.textContent = "Currently using: your API key (AI image reading).";
     chip.textContent = "Using your API key";
   } else if (serverDefaultMethod === "vision") {
@@ -77,7 +110,10 @@ function refreshApiKeyStatus() {
     status.textContent = "Currently using: the free built-in reader.";
     chip.textContent = "Free reader";
   }
-  chip.classList.toggle("active", hasOwnKey || serverDefaultMethod === "vision");
+  chip.classList.toggle("active", !forcedFree && (hasOwnKey || serverDefaultMethod === "vision"));
+
+  const forceFreeBtn = document.getElementById("force-free-toggle");
+  if (forceFreeBtn) forceFreeBtn.textContent = forcedFree ? "Switch Back to AI Reading" : "Switch to the Free Reader";
 }
 
 const apiKeyToggle = document.getElementById("api-key-toggle");
@@ -86,6 +122,15 @@ const apiKeyInput = document.getElementById("api-key-input");
 apiKeyInput.value = getStoredApiKey();
 
 apiKeyToggle.addEventListener("click", () => { apiKeyPanel.hidden = !apiKeyPanel.hidden; });
+
+document.getElementById("force-free-toggle").addEventListener("click", () => {
+  const nowForced = !getForceFreeReader();
+  setForceFreeReader(nowForced);
+  refreshApiKeyStatus();
+  showToast(nowForced
+    ? "Free reader forced for this session — every review will use it, regardless of any key."
+    : "Switched back — AI reading will be used again if available.");
+});
 
 document.getElementById("api-key-save").addEventListener("click", () => {
   const key = apiKeyInput.value.trim();
@@ -238,7 +283,7 @@ singleForm.addEventListener("submit", async (e) => {
 
   const started = performance.now();
   try {
-    const res = await fetch("/api/review", { method: "POST", body: formData, headers: apiKeyHeaders() });
+    const res = await fetch(`/api/review${methodQueryParam()}`, { method: "POST", body: formData, headers: apiKeyHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Request failed");
     renderSingleResult(data, performance.now() - started);
@@ -316,7 +361,7 @@ batchForm.addEventListener("submit", async (e) => {
 
   const started = performance.now();
   try {
-    const res = await fetch("/api/review/batch", { method: "POST", body: formData, headers: apiKeyHeaders() });
+    const res = await fetch(`/api/review/batch${methodQueryParam()}`, { method: "POST", body: formData, headers: apiKeyHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Request failed");
     renderBatchResult(data, performance.now() - started);

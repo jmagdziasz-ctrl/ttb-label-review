@@ -22,18 +22,25 @@
   <div id="api-key-panel" class="api-key-panel" hidden>
     <p>Labels can be read two ways: a free, built-in offline reader (no account or setup needed), or Claude's AI image
       reading, which is more accurate on blurry, angled, or low-quality photos. Which one is active right now is shown
-      below. If you have your own <a href="https://console.anthropic.com" target="_blank" rel="noopener">Anthropic API
-      key</a>, you can enter it to use AI reading under your own account instead — this costs a small amount per label
-      reviewed.</p>
-    <label>Anthropic API Key <span class="optional">(optional — leave blank to use this app's default reader)</span>
-      <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-    </label>
-    <div class="form-actions">
-      <button type="button" class="secondary-btn" id="api-key-save">Use for This Session</button>
-      <button type="button" class="secondary-btn" id="api-key-remove">Remove Key</button>
-    </div>
+      below — use the button to switch between them and compare.</p>
     <p class="note" id="api-key-status">Currently using: the free built-in reader.</p>
-    <p class="note"><strong>This key is not saved permanently</strong> — it's kept only for as long as this browser tab stays open, and is cleared automatically when you close it (so it won't sit around on a shared or public computer). You'll need to re-enter it each new browser session.</p>
+    <div class="form-actions">
+      <button type="button" class="secondary-btn" id="force-free-toggle">Switch to the Free Reader</button>
+    </div>
+    <p class="note">Forces every review to use the free reader instead of AI reading — handy for comparing the two, or as a fallback if AI reading ever has an issue.</p>
+
+    <details class="example-box">
+      <summary>Advanced: use your own Anthropic API key instead</summary>
+      <p class="note">If you have your own <a href="https://console.anthropic.com" target="_blank" rel="noopener">Anthropic API key</a>, you can enter it to use AI reading under your own account rather than this app's default — this costs a small amount per label reviewed on your account.</p>
+      <label>Anthropic API Key <span class="optional">(optional — leave blank to use this app's default reader)</span>
+        <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <div class="form-actions">
+        <button type="button" class="secondary-btn" id="api-key-save">Use for This Session</button>
+        <button type="button" class="secondary-btn" id="api-key-remove">Remove Key</button>
+      </div>
+      <p class="note"><strong>This key is not saved permanently</strong> — it's kept only for as long as this browser tab stays open, and is cleared automatically when you close it (so it won't sit around on a shared or public computer). You'll need to re-enter it each new browser session. It's sent with each review request straight to this app's own server, which uses it to call Claude on your behalf; it's never sent anywhere else, and you can remove it early at any time.</p>
+    </details>
     <details class="example-box">
       <summary>Don't have a key? Here's how to get one</summary>
       <ol class="steps">
@@ -42,7 +49,6 @@
         <li>Add a payment method under <strong>Settings → Billing</strong> — usage is billed per request, typically a few cents per label reviewed.</li>
         <li>Paste the key above and click "Use for This Session".</li>
       </ol>
-      <p class="note">It's sent with each review request straight to this app's own server, which uses it to call Claude on your behalf; it's never sent anywhere else, and you can remove it early at any time.</p>
     </details>
   </div>
 </div>
