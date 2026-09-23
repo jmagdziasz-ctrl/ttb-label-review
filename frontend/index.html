@@ -20,11 +20,12 @@
 <div class="api-key-bar">
   <button type="button" id="api-key-toggle" class="link-btn">⚙ Reading settings <span id="api-key-status-chip" class="status-chip">Free reader</span></button>
   <div id="api-key-panel" class="api-key-panel" hidden>
-    <p>By default, labels are read for free using a built-in, offline reader — no account or setup needed. If you have an
-      <a href="https://console.anthropic.com" target="_blank" rel="noopener">Anthropic API key</a>, you can enter it below
-      to use Claude's AI image reading instead, which is more accurate on blurry, angled, or low-quality photos. This costs
-      a small amount per label reviewed on your own Anthropic account.</p>
-    <label>Anthropic API Key <span class="optional">(optional — leave blank to keep using the free reader)</span>
+    <p>Labels can be read two ways: a free, built-in offline reader (no account or setup needed), or Claude's AI image
+      reading, which is more accurate on blurry, angled, or low-quality photos. Which one is active right now is shown
+      below. If you have your own <a href="https://console.anthropic.com" target="_blank" rel="noopener">Anthropic API
+      key</a>, you can enter it to use AI reading under your own account instead — this costs a small amount per label
+      reviewed.</p>
+    <label>Anthropic API Key <span class="optional">(optional — leave blank to use this app's default reader)</span>
       <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     </label>
     <div class="form-actions">

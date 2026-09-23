@@ -52,14 +52,32 @@ function apiKeyHeaders() {
   return key ? { "X-Anthropic-Api-Key": key } : {};
 }
 
+// Whether *this server* already defaults to Vision (an ANTHROPIC_API_KEY is
+// configured on the deployment itself, e.g. for a demo) - separate from
+// whether the visitor has entered their own key. Without this, the status
+// chip would wrongly say "Free reader" on a deployment that's actually
+// already running AI reading for everyone by default.
+let serverDefaultMethod = null;
+fetch("/api/health")
+  .then((res) => res.json())
+  .then((data) => { serverDefaultMethod = data.default_extraction_method; refreshApiKeyStatus(); })
+  .catch(() => {}); // health check failing isn't worth surfacing here - just keep the client-only view
+
 function refreshApiKeyStatus() {
-  const hasKey = !!getStoredApiKey();
-  document.getElementById("api-key-status").textContent = hasKey
-    ? "Currently using: your API key (AI image reading)."
-    : "Currently using: the free built-in reader.";
+  const hasOwnKey = !!getStoredApiKey();
   const chip = document.getElementById("api-key-status-chip");
-  chip.textContent = hasKey ? "Using your API key" : "Free reader";
-  chip.classList.toggle("active", hasKey);
+  const status = document.getElementById("api-key-status");
+  if (hasOwnKey) {
+    status.textContent = "Currently using: your API key (AI image reading).";
+    chip.textContent = "Using your API key";
+  } else if (serverDefaultMethod === "vision") {
+    status.textContent = "Currently using: AI image reading (this deployment has it configured by default - no key needed from you).";
+    chip.textContent = "AI reading (built in)";
+  } else {
+    status.textContent = "Currently using: the free built-in reader.";
+    chip.textContent = "Free reader";
+  }
+  chip.classList.toggle("active", hasOwnKey || serverDefaultMethod === "vision");
 }
 
 const apiKeyToggle = document.getElementById("api-key-toggle");
@@ -71,7 +89,7 @@ apiKeyToggle.addEventListener("click", () => { apiKeyPanel.hidden = !apiKeyPanel
 
 document.getElementById("api-key-save").addEventListener("click", () => {
   const key = apiKeyInput.value.trim();
-  if (!key) { showToast("Enter a key first, or use Remove Key to go back to the free reader."); return; }
+  if (!key) { showToast("Enter a key first, or use Remove Key to go back to this app's default reader."); return; }
   setStoredApiKey(key);
   refreshApiKeyStatus();
   // A cheap, non-blocking sanity check: every real Anthropic key starts
@@ -89,7 +107,7 @@ document.getElementById("api-key-remove").addEventListener("click", () => {
   apiKeyInput.value = "";
   setStoredApiKey("");
   refreshApiKeyStatus();
-  showToast("API key removed — back to the free reader.");
+  showToast(serverDefaultMethod === "vision" ? "API key removed — back to this deployment's default AI reading." : "API key removed — back to the free reader.");
 });
 
 refreshApiKeyStatus();

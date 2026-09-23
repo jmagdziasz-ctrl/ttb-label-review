@@ -516,7 +516,15 @@ frontend — no separate frontend build/deploy step.
 - Root/start directory: `backend`
 - Build: `pip install -r requirements.txt`
 - Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Optional env var: `ANTHROPIC_API_KEY` to switch to the Vision backend.
+- Optional env var: `ANTHROPIC_API_KEY` — set this on the deployment itself
+  to make Vision the default for every visitor, with no key of their own
+  required (this is how the publicly deployed demo is configured, so it
+  demonstrates the AI reading path out of the box). **Set this as a
+  platform-managed environment variable/secret in the hosting dashboard —
+  never commit a real key into source control**, since this repo is public.
+  The free OCR path stays fully intact in the code either way — a visitor
+  can still force it via `?method=ocr`, and the app keeps working on OCR
+  alone if this key is ever removed or its credits run out.
 - Optional env var: `ALLOWED_ORIGINS` — comma-separated list of origins
   allowed to call the API cross-origin (defaults to `localhost:8000` /
   `127.0.0.1:8000`, which only matters for local development anyway, since
