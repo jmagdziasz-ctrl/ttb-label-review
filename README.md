@@ -113,7 +113,10 @@ cd sample_labels
 python generate_samples.py
 ```
 
-Run the matching-logic unit tests (no OCR/model dependencies needed):
+Run the unit tests (54 tests covering the matching engine, manifest CSV
+parsing, extraction-backend selection, and the API layer — none of them
+need a real OCR run or a network call, since the extraction backend is
+stubbed out where that matters):
 
 ```bash
 cd backend
@@ -597,6 +600,9 @@ backend/
       factory.py            Picks a backend based on env/request
   tests/
     test_matching.py     Unit tests for the matching engine
+    test_manifest.py      Unit tests for CSV manifest parsing
+    test_factory.py        Unit tests for extraction-backend selection/caching
+    test_main.py             Unit tests for the API layer (routing, validation, error handling)
   requirements.txt
 frontend/
   index.html / style.css / app.js   Plain HTML/JS UI, no build step
